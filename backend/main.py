@@ -75,6 +75,7 @@ def run_async(coro):
 # Global Exception Handler
 @app.errorhandler(Exception)
 def handle_exception(e):
+    app.logger.error("Unhandled exception occurred during request:", exc_info=e)
     return jsonify({"detail": str(e)}), 500
 
 
@@ -124,8 +125,14 @@ def upload_document():
         file_size=file_size
     ))
     
-    # Dispatch Celery task
-    ingest_document.delay(doc_id, str(file_path), ext.lstrip('.'))
+    # Dispatch Celery task with graceful inline fallback if Redis is not running
+    try:
+        ingest_document.delay(doc_id, str(file_path), ext.lstrip('.'))
+    except Exception as e:
+        app.logger.warning(f"Failed to dispatch Celery task: {e}. Executing ingestion in background thread pool.")
+        from backend.workers.tasks import run_ingestion
+        _executor.submit(lambda: run_async(run_ingestion(doc_id, str(file_path), ext.lstrip('.'))))
+
     
     resp = DocumentUploadResponse(
         id=doc_id,
