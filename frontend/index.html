@@ -37,6 +37,9 @@
             <aside id="sidebar" class="sidebar glass-panel">
                 <div class="sidebar-header">
                     <h2>Documents</h2>
+                    <button id="sidebar-close" class="icon-btn mobile-only close-btn" aria-label="Close Sidebar">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
                 </div>
                 
                 <div id="upload-zone" class="upload-zone">
@@ -85,6 +88,7 @@
         </div>
         
         <div id="toast-container" class="toast-container"></div>
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="js/api.js" type="module"></script>

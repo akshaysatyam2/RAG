@@ -141,24 +141,26 @@ async def build_contextual_chunks(
         
     # 5. Extract Entities & Finalize
     await report_progress("Entity Extraction", 5, 5, "Extracting entities and structuring data...")
-    structured_chunks = []
     
-    for i, (original_text, ctx_text, embedding) in enumerate(zip(raw_chunks, contextualized_texts, dense_embeddings)):
-        # Extract entities
-        # Warning: For many chunks, this might hit rate limits. In production, need concurrency control.
+    async def extract_triples_for_chunk(idx, text):
         try:
-            triples = await extract_entities_and_relations(original_text)
+            return idx, await extract_entities_and_relations(text)
         except Exception as e:
-            logger.error(f"Error extracting triples for chunk {i}: {e}")
-            triples = []
+            logger.error(f"Error extracting triples for chunk {idx}: {e}")
+            return idx, []
             
-        # Sparse vector
+    extraction_tasks = [extract_triples_for_chunk(i, txt) for i, txt in enumerate(raw_chunks)]
+    extraction_results = await asyncio.gather(*extraction_tasks)
+    triples_by_index = dict(extraction_results)
+    
+    structured_chunks = []
+    for i, (original_text, ctx_text, embedding) in enumerate(zip(raw_chunks, contextualized_texts, dense_embeddings)):
+        triples = triples_by_index.get(i, [])
         sparse_vec = compute_sparse_vector(ctx_text, corpus_tokens)
         
         # Meta info
         page_num = 1
         if pages_metadata:
-            # simple heuristic: assign page based on proportion
             total_chunks = len(raw_chunks)
             total_pages = len(pages_metadata)
             if total_pages > 0 and total_chunks > 0:
@@ -179,6 +181,7 @@ async def build_contextual_chunks(
             "triples": triples
         }
         structured_chunks.append(chunk_data)
+
         
     await report_progress("Complete", 5, 5, "Ingestion pipeline complete.")
     return structured_chunks

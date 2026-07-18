@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 client = AsyncOpenAI(
     base_url=settings.llm.base_url,
     api_key=settings.llm.api_key,
+    timeout=5.0,
 )
+
 
 
 @retry(
