@@ -30,7 +30,8 @@ from backend.models import (
 from backend.workers.tasks import ingest_document
 from backend.services.vector_store import (
     initialize_collection,
-    delete_by_document as vector_delete_by_document
+    delete_by_document as vector_delete_by_document,
+    is_qdrant_available
 )
 from backend.services.graph import (
     initialize_graph,
@@ -210,7 +211,19 @@ def chat_endpoint():
         except ValidationError as e:
             return jsonify({"detail": e.errors()}), 422
             
-        # 1. Retrieve chunks
+        # Check if Qdrant is available before attempting retrieval
+        if not run_async(is_qdrant_available()):
+            resp = ChatResponse(
+                answer=(
+                    "Error: The Qdrant vector database is unreachable at localhost:6333. "
+                    "Please ensure Qdrant is running so that the system can query your documents."
+                ),
+                sources=[],
+                retrieval_metadata={"status": "Qdrant connection error"}
+            )
+            return jsonify(resp.model_dump())
+
+        # 1. Retrieve Chunks
         hybrid_chunks, graph_context = run_async(full_retrieval_pipeline(
             req.query, top_k=settings.retrieval.top_k_retrieval
         ))

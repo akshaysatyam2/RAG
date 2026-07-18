@@ -17,6 +17,18 @@ COLLECTION_NAME = settings.qdrant.collection
 DENSE_DIMENSION = 384
 
 
+async def is_qdrant_available() -> bool:
+    """
+    Check if the Qdrant client can connect to the database.
+    """
+    try:
+        await client.get_collections()
+        return True
+    except Exception:
+        return False
+
+
+
 async def initialize_collection():
     """
     Creates the collection with dense+sparse vector config if it doesn't exist.
