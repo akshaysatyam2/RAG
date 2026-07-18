@@ -61,10 +61,6 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     """
     # 1. Get query vectors
     dense_vector = get_dense_embedding(query)
-    # For sparse, we treat query as document and use basic term frequencies.
-    # Note: To be perfectly accurate with BM25, we'd need IDF from the entire collection.
-    # Given the constraint of Qdrant Sparse Vectors, we construct the query vector similar to ingestion.
-    # Assuming corpus tokens are not available at query time, we just use raw token counts.
     query_tokens = tokenize_for_sparse(query)
     vocab = {token: idx for idx, token in enumerate(set(query_tokens))}
     indices = []
@@ -76,11 +72,15 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
             
     sparse_vector = {"indices": indices, "values": values}
     
-    # 2. Run searches in parallel
-    dense_task = search_dense(query_vector=dense_vector, top_k=top_k)
-    sparse_task = search_sparse(sparse_vector=sparse_vector, top_k=top_k)
+    dense_results, sparse_results = [], []
     
-    dense_results, sparse_results = await asyncio.gather(dense_task, sparse_task)
+    # 2. Run searches in parallel
+    try:
+        dense_task = search_dense(query_vector=dense_vector, top_k=top_k)
+        sparse_task = search_sparse(sparse_vector=sparse_vector, top_k=top_k)
+        dense_results, sparse_results = await asyncio.gather(dense_task, sparse_task)
+    except Exception as e:
+        logger.warning(f"Hybrid search failed to retrieve results from Qdrant: {e}")
     
     # 3. Fuse results
     fused_results = reciprocal_rank_fusion(
@@ -103,26 +103,28 @@ async def expand_with_graph(pivot_chunks: List[Dict[str, Any]], max_hops: int = 
         
     pivot_entities = set()
     
-    # For simplicity, extract entities from the query or top chunks text on the fly
-    # Alternatively, the chunks might already store their extracted triples in the payload.
     for chunk in pivot_chunks:
         payload = chunk.get("payload", {})
-        # Assuming triples were serialized into the payload during ingestion
-        # If not, we run LLM extraction on the top chunks' text
         chunk_text = payload.get("text", "")
         if chunk_text:
-            triples = await extract_entities_and_relations(chunk_text)
-            for t in triples:
-                if "head" in t: pivot_entities.add(t["head"])
-                if "tail" in t: pivot_entities.add(t["tail"])
+            try:
+                triples = await extract_entities_and_relations(chunk_text)
+                for t in triples:
+                    if "head" in t: pivot_entities.add(t["head"])
+                    if "tail" in t: pivot_entities.add(t["tail"])
+            except Exception as e:
+                logger.warning(f"Failed to extract entities during graph expansion: {e}")
                 
     if not pivot_entities:
         return []
         
     # Expand from pivots
-    graph_context = await expand_from_entities(list(pivot_entities), max_hops=max_hops)
-    
-    return graph_context
+    try:
+        graph_context = await expand_from_entities(list(pivot_entities), max_hops=max_hops)
+        return graph_context
+    except Exception as e:
+        logger.warning(f"Neo4j graph expansion failed: {e}")
+        return []
 
 
 async def full_retrieval_pipeline(query: str, top_k: int = 20) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -130,11 +132,22 @@ async def full_retrieval_pipeline(query: str, top_k: int = 20) -> Tuple[List[Dic
     Executes hybrid search + graph expansion.
     Returns: (hybrid_chunks, graph_context)
     """
+    hybrid_chunks = []
+    graph_context = []
+    
     # 1. Hybrid Search
-    hybrid_chunks = await hybrid_search(query, top_k=top_k)
+    try:
+        hybrid_chunks = await hybrid_search(query, top_k=top_k)
+    except Exception as e:
+        logger.warning(f"Failed in full_retrieval_pipeline (hybrid search): {e}")
     
     # 2. Graph Expansion (using top 5 chunks as pivots to limit scope)
-    pivot_chunks = hybrid_chunks[:5]
-    graph_context = await expand_with_graph(pivot_chunks, max_hops=2)
+    try:
+        pivot_chunks = hybrid_chunks[:5]
+        if pivot_chunks:
+            graph_context = await expand_with_graph(pivot_chunks, max_hops=2)
+    except Exception as e:
+        logger.warning(f"Failed in full_retrieval_pipeline (graph expansion): {e}")
     
     return hybrid_chunks, graph_context
+

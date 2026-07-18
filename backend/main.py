@@ -237,8 +237,15 @@ def chat_endpoint():
                 })
                 
         if not expanded_chunks:
+            # Check if user has uploaded any documents
+            docs = run_async(list_documents())
+            if not docs:
+                answer = "No documents have been uploaded yet. I don't have enough information to answer that question. Please upload some documents first."
+            else:
+                answer = "No matching information was found in the uploaded documents for your query. I don't have enough information to answer that question."
+            
             resp = ChatResponse(
-                answer="I don't have enough information to answer that question.",
+                answer=answer,
                 sources=[],
                 retrieval_metadata={"status": "No context retrieved"}
             )
@@ -252,11 +259,12 @@ def chat_endpoint():
         
         if not filtered_chunks:
             resp = ChatResponse(
-                answer="I don't have enough information to answer that question.",
+                answer="No matching information met the similarity threshold. I don't have enough information to answer that question.",
                 sources=[],
                 retrieval_metadata={"status": "No context met the similarity threshold"}
             )
             return jsonify(resp.model_dump())
+
             
         # 5. Build prompt
         context_texts = []
@@ -289,11 +297,17 @@ def chat_endpoint():
         user_prompt = f"{history_str}Context:\n{context_str}\n\nQuestion: {req.query}"
         
         # 6. Generate answer
-        answer = run_async(generate_completion(system_prompt, user_prompt))
-        
-        # Grounding fallback check
-        if "i don't know" in answer.lower() or "cannot answer" in answer.lower() or "don't have enough information" in answer.lower():
-            answer = "I don't have enough information to answer that question."
+        try:
+            answer = run_async(generate_completion(system_prompt, user_prompt))
+            # Grounding fallback check
+            if "i don't know" in answer.lower() or "cannot answer" in answer.lower() or "don't have enough information" in answer.lower():
+                answer = "I don't have enough information to answer that question."
+        except Exception as e:
+            app.logger.error(f"Failed to generate LLM completion: {e}")
+            answer = (
+                "Error: Could not connect to the LLM server. Please verify that your LLM server "
+                "(Ollama or LMStudio) is running locally at http://localhost:11434/v1."
+            )
             
         resp = ChatResponse(
             answer=answer,
@@ -304,6 +318,7 @@ def chat_endpoint():
             }
         )
         return jsonify(resp.model_dump())
+
         
     except Exception as e:
         return jsonify({"detail": str(e)}), 500
