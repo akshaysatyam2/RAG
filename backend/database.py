@@ -31,8 +31,22 @@ CREATE TABLE IF NOT EXISTS ingestion_progress (
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS graph_triples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id TEXT NOT NULL,
+    head TEXT NOT NULL,
+    head_type TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    tail TEXT NOT NULL,
+    tail_type TEXT NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_progress_doc_id ON ingestion_progress(document_id);
+CREATE INDEX IF NOT EXISTS idx_graph_triples_doc_id ON graph_triples(document_id);
+CREATE INDEX IF NOT EXISTS idx_graph_triples_head ON graph_triples(head);
+CREATE INDEX IF NOT EXISTS idx_graph_triples_tail ON graph_triples(tail);
 """
 
 
