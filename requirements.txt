@@ -1,0 +1,43 @@
+# Core framework
+Flask
+Flask-Cors
+asgiref
+pydantic
+pydantic-settings
+
+# Async task queue
+celery[redis]
+redis
+
+# Vector database
+qdrant-client
+
+# Graph database
+neo4j
+
+# LLM integration
+openai
+tenacity
+
+# PDF and image processing
+PyMuPDF
+pytesseract
+Pillow
+
+# BM25 sparse retrieval
+rank-bm25
+
+# Environment management
+python-dotenv
+
+# Database
+aiosqlite
+
+# Utilities
+numpy
+httpx
+
+# Testing
+pytest
+pytest-asyncio
+pytest-httpx

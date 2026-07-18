@@ -1,0 +1,49 @@
+# Dependencies
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment and secrets
+.env
+
+# Project state (resumption ledger)
+.project_state.json
+
+# Uploads and data
+uploads/
+data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+test-results/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Logs
+*.log

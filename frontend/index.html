@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multimodal GraphRAG</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Top Bar -->
+        <header class="top-bar glass-panel">
+            <div class="top-bar-left">
+                <button id="mobile-menu-toggle" class="icon-btn" aria-label="Toggle Menu">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+                </button>
+                <h1 class="logo">GraphRAG</h1>
+            </div>
+            <div class="top-bar-controls">
+                <div class="slider-container" title="Context History Depth">
+                    <label for="history-slider">History:</label>
+                    <input type="range" id="history-slider" min="0" max="25" value="0">
+                    <span id="history-value">0</span>
+                </div>
+                <button id="theme-toggle" class="icon-btn" aria-label="Toggle Theme">
+                    <svg class="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                    <svg class="sun-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <aside id="sidebar" class="sidebar glass-panel">
+                <div class="sidebar-header">
+                    <h2>Documents</h2>
+                </div>
+                
+                <div id="upload-zone" class="upload-zone">
+                    <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg" hidden>
+                    <div class="upload-content">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                        <p>Drag & drop or click to upload</p>
+                        <span class="upload-hint">PDF, PNG, JPG</span>
+                    </div>
+                    <div id="upload-progress-container" class="progress-container hidden">
+                        <div class="progress-bar-bg">
+                            <div id="upload-progress-bar" class="progress-bar-fill"></div>
+                        </div>
+                        <span id="upload-progress-text">0%</span>
+                    </div>
+                </div>
+
+                <div id="documents-list" class="documents-list">
+                    <!-- Document cards injected here -->
+                </div>
+            </aside>
+
+            <!-- Main Chat Area -->
+            <main id="chat-area" class="chat-area">
+                <div id="chat-messages" class="chat-messages">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        </div>
+                        <h2>How can I help you today?</h2>
+                        <div class="suggested-prompts">
+                            <button class="prompt-btn">Summarize the uploaded documents</button>
+                            <button class="prompt-btn">Extract key entities and relationships</button>
+                            <button class="prompt-btn">What are the main topics discussed?</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chat-input-container glass-panel">
+                    <textarea id="chat-input" placeholder="Ask a question about your documents..." rows="1"></textarea>
+                    <button id="send-btn" class="send-btn" aria-label="Send message" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    </button>
+                </div>
+            </main>
+        </div>
+        
+        <div id="toast-container" class="toast-container"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="js/api.js" type="module"></script>
+    <script src="js/theme.js" type="module"></script>
+    <script src="js/slider.js" type="module"></script>
+    <script src="js/documents.js" type="module"></script>
+    <script src="js/chat.js" type="module"></script>
+    <script src="js/app.js" type="module"></script>
+</body>
+</html>
