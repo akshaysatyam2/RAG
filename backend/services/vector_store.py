@@ -9,15 +9,21 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize Qdrant client - local file-backed storage or in-memory for tests
+# Initialize Qdrant client - local file-backed storage or in-memory fallback if locked/testing
 import os
 import sys
+
+qdrant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "qdrant"))
+
 if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
     client = AsyncQdrantClient(location=":memory:")
 else:
-    qdrant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "qdrant"))
-    os.makedirs(qdrant_dir, exist_ok=True)
-    client = AsyncQdrantClient(path=qdrant_dir)
+    try:
+        os.makedirs(qdrant_dir, exist_ok=True)
+        client = AsyncQdrantClient(path=qdrant_dir)
+    except Exception as e:
+        logger.warning(f"Could not lock Qdrant storage directory: {e}. Falling back to in-memory storage.")
+        client = AsyncQdrantClient(location=":memory:")
 
 COLLECTION_NAME = settings.qdrant.collection
 # Usually the dense model has a fixed dimension. all-MiniLM-L6-v2 is 384.
