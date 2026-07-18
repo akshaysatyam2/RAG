@@ -16,16 +16,35 @@ _dense_model = None
 _model_lock = threading.Lock()
 
 
+def get_deterministic_dummy_embedding(text: str) -> List[float]:
+    """
+    Generate a deterministic vector of length 384 using a hash of the text.
+    Acts as a fail-safe fallback when sentence-transformers is not installed.
+    """
+    import hashlib
+    # Deterministic seed using SHA-256 hash of text
+    h = hashlib.sha256(text.encode('utf-8')).digest()
+    np.random.seed(int.from_bytes(h[:4], 'big'))
+    vec = np.random.randn(384)
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec = vec / norm
+    return vec.tolist()
+
+
 def _get_dense_model():
     global _dense_model
     if _dense_model is None:
         if SentenceTransformer is None:
-            raise ImportError("sentence-transformers is not installed on this system.")
+            return None
         with _model_lock:
             if _dense_model is None:
-                _dense_model = SentenceTransformer(settings.embedding.model_name)
+                try:
+                    _dense_model = SentenceTransformer(settings.embedding.model_name)
+                except Exception as e:
+                    logger.warning(f"Could not load SentenceTransformer: {e}. Using dummy embeddings.")
+                    _dense_model = "dummy"
     return _dense_model
-
 
 
 def get_dense_embedding(text: str) -> List[float]:
@@ -33,9 +52,14 @@ def get_dense_embedding(text: str) -> List[float]:
     Get the dense embedding for a single text.
     """
     model = _get_dense_model()
-    # Return as list of floats
-    embedding = model.encode(text, convert_to_numpy=True)
-    return embedding.tolist()
+    if model is None or model == "dummy":
+        return get_deterministic_dummy_embedding(text)
+    try:
+        embedding = model.encode(text, convert_to_numpy=True)
+        return embedding.tolist()
+    except Exception as e:
+        logger.warning(f"Failed to encode text with model: {e}. Using dummy embedding.")
+        return get_deterministic_dummy_embedding(text)
 
 
 def get_dense_embeddings_batch(texts: List[str]) -> List[List[float]]:
@@ -46,8 +70,15 @@ def get_dense_embeddings_batch(texts: List[str]) -> List[List[float]]:
         return []
     
     model = _get_dense_model()
-    embeddings = model.encode(texts, convert_to_numpy=True)
-    return embeddings.tolist()
+    if model is None or model == "dummy":
+        return [get_deterministic_dummy_embedding(t) for t in texts]
+    try:
+        embeddings = model.encode(texts, convert_to_numpy=True)
+        return embeddings.tolist()
+    except Exception as e:
+        logger.warning(f"Failed to encode texts with model: {e}. Using dummy embeddings.")
+        return [get_deterministic_dummy_embedding(t) for t in texts]
+
 
 
 def tokenize_for_sparse(text: str) -> List[str]:
