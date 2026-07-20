@@ -78,6 +78,7 @@ def rerank(query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Dic
 def filter_by_threshold(chunks: List[Dict[str, Any]], threshold: float) -> List[Dict[str, Any]]:
     """
     Filter chunks above a given similarity/rerank score threshold.
+    If no chunks meet the threshold, returns top candidate chunks as a fallback.
     """
     filtered = []
     for chunk in chunks:
@@ -85,4 +86,8 @@ def filter_by_threshold(chunks: List[Dict[str, Any]], threshold: float) -> List[
         if score is not None and score >= threshold:
             filtered.append(chunk)
             
+    if not filtered and chunks:
+        filtered = chunks[:3]
+
     return filtered
+

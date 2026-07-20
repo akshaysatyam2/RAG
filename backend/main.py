@@ -267,16 +267,11 @@ def chat_endpoint():
         # 3. Score chunks using cross-encoder
         reranked_chunks = rerank(req.query, expanded_chunks, top_k=req.top_k)
         
-        # 4. Filter by threshold
+        # 4. Filter by threshold (fallback to top 3 if threshold filters everything out)
         filtered_chunks = filter_by_threshold(reranked_chunks, settings.retrieval.similarity_threshold)
-        
         if not filtered_chunks:
-            resp = ChatResponse(
-                answer="No matching information met the similarity threshold. I don't have enough information to answer that question.",
-                sources=[],
-                retrieval_metadata={"status": "No context met the similarity threshold"}
-            )
-            return jsonify(resp.model_dump())
+            filtered_chunks = reranked_chunks[:3]
+
 
             
         # 5. Build prompt
