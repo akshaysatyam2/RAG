@@ -19,14 +19,25 @@ logger = logging.getLogger(__name__)
 
 def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
     """
-    Parse a PDF file and return a list of dictionaries with page numbers and text using PyMuPDF.
+    Parse a PDF file and return a list of dictionaries with page numbers and text using PyMuPDF and Tesseract OCR fallback.
     """
     pages = []
     try:
         doc = fitz.open(file_path)
         for i, page in enumerate(doc):
-            text = page.get_text()
-            if text:
+            text = page.get_text("text")
+            if not text or len(text.strip()) < 10:
+                # OCR fallback for scanned PDF pages or vector text graphics
+                try:
+                    pix = page.get_pixmap()
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    ocr_text = pytesseract.image_to_string(img)
+                    if ocr_text and len(ocr_text.strip()) > len(text.strip()):
+                        text = ocr_text
+                except Exception as ocr_err:
+                    logger.warning(f"OCR fallback failed for page {i+1} of {file_path}: {ocr_err}")
+
+            if text and text.strip():
                 pages.append({
                     "page_number": i + 1,
                     "text": text.strip()
@@ -36,6 +47,7 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
         logger.error(f"Error parsing PDF {file_path}: {e}")
         raise
     return pages
+
 
 
 
