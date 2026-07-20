@@ -43,18 +43,43 @@ STOP_WORDS = {
     "do", "does", "did", "doing", "extract", "key", "main", "topics", "discussed"
 }
 
+import re
+
+def stem_word(w: str) -> str:
+    """Simple stemming for common English suffixes (plural 's', 'es', 'ing', 'ed')."""
+    w = w.lower()
+    if len(w) > 4:
+        if w.endswith("ies"): return w[:-3] + "y"
+        if w.endswith("es"): return w[:-2]
+        if w.endswith("s") and not w.endswith("ss"): return w[:-1]
+        if w.endswith("ing"): return w[:-3]
+        if w.endswith("ed"): return w[:-2]
+    return w
+
+def normalize_query_text(query: str) -> str:
+    """
+    Normalizes query string:
+    - Removes possessive suffixes ('s, ’s) e.g., "akshay's" -> "akshay"
+    - Strips extra whitespace
+    """
+    if not query:
+        return ""
+    q_norm = re.sub(r"['’]s\b", "", query, flags=re.IGNORECASE)
+    return q_norm.strip()
+
 def compute_smart_overlap_score(query: str, text: str) -> float:
     """
-    Calculates an entity-weighted, stop-word filtered relevance score.
+    Calculates an entity-weighted, stop-word filtered relevance score with stemming support.
     Gives higher weight to rare terms, proper nouns, and entity matches.
     """
     import string
     translator = str.maketrans('', '', string.punctuation)
-    clean_query = query.translate(translator).lower()
+    clean_query = normalize_query_text(query).translate(translator).lower()
     clean_text = text.translate(translator).lower()
 
     query_tokens = [w for w in clean_query.split() if w]
-    text_tokens = set(clean_text.split())
+    text_tokens = [w for w in clean_text.split() if w]
+    stemmed_text_tokens = {stem_word(w) for w in text_tokens}
 
     meaningful_query_terms = [w for w in query_tokens if w not in STOP_WORDS]
     if not meaningful_query_terms:
@@ -62,13 +87,15 @@ def compute_smart_overlap_score(query: str, text: str) -> float:
 
     score = 0.0
     for term in meaningful_query_terms:
-        if term in text_tokens:
+        stemmed_term = stem_word(term)
+        if stemmed_term in stemmed_text_tokens or any(stemmed_term in t for t in stemmed_text_tokens if len(t) > 3):
             weight = 2.0 if len(term) > 5 or term[0].isupper() else 1.0
             score += weight
 
     max_possible = sum(2.0 if len(t) > 5 or t[0].isupper() else 1.0 for t in meaningful_query_terms)
     normalized_score = score / max(max_possible, 1.0)
     return float(normalized_score)
+
 
 
 def rerank(query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Dict[str, Any]]:

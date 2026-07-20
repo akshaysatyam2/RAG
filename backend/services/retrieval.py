@@ -59,9 +59,12 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     """
     Runs dense+sparse in parallel, fuses with RRF.
     """
+    from backend.services.reranker import normalize_query_text
+    norm_query = normalize_query_text(query)
+
     # 1. Get query vectors
-    dense_vector = get_dense_embedding(query)
-    sparse_vector = compute_sparse_vector(query)
+    dense_vector = get_dense_embedding(norm_query)
+    sparse_vector = compute_sparse_vector(norm_query)
     
     dense_results, sparse_results = [], []
     
@@ -82,6 +85,7 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     
     # Return top_k fused
     return fused_results[:top_k]
+
 
 
 async def expand_with_graph(pivot_chunks: List[Dict[str, Any]], max_hops: int = 2) -> List[Dict[str, Any]]:

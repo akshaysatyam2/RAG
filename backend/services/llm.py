@@ -46,9 +46,11 @@ async def check_llm_availability() -> bool:
 
 def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
     """
-    Fallback rule-based text generation when LLM is unreachable.
-    Uses simple keyword matching and sentence extraction from the prompt context.
+    Fallback completion when local LLM server (Ollama) is offline or unresponsive.
+    Uses possessive normalization, stemming, and paragraph block extraction from prompt context.
     """
+    from backend.services.reranker import normalize_query_text, stem_word, STOP_WORDS
+
     query = user_prompt
     query_match = re.search(r'(?:Query|Question|User Request):\s*(.*?)$', user_prompt, re.DOTALL | re.IGNORECASE)
     if query_match:
@@ -58,53 +60,55 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
         if lines:
             query = lines[-1]
 
-    context_matches = re.findall(r'(?:Context|Source|Chunk|Document).*?:\s*(.*?)(?=\n\n|\n[A-Z]|$)', user_prompt, re.DOTALL | re.IGNORECASE)
+    context_matches = re.findall(r'\[\d+\]\s*(.*?)(?=\n\[\d+\]|\n\nQuestion:|$)', user_prompt, re.DOTALL)
+    if not context_matches:
+        context_matches = re.findall(r'(?:Context|Source|Chunk|Document).*?:\s*(.*?)(?=\n\n|\n[A-Z]|$)', user_prompt, re.DOTALL | re.IGNORECASE)
     if not context_matches:
         parts = user_prompt.split("\n\n")
-        context_matches = [p for p in parts if len(p.split()) > 15]
+        context_matches = [p for p in parts if len(p.split()) > 10]
 
     contexts = [c.strip() for c in context_matches if len(c.strip()) > 10]
 
     if not contexts:
         return (
-            "I apologize, but I could not reach the local LLM server (Ollama) "
-            "and no document context was found to extract an answer."
+            "No matching information was found in the uploaded documents for your query."
         )
 
-    query_words = [w.lower().replace("?", "").replace(".", "") for w in query.split() if len(w) > 3]
-    if not query_words:
-        query_words = ["resume", "experience", "akshay", "skills", "education", "project"]
+    import string
+    norm_q = normalize_query_text(query)
+    clean_q_tokens = norm_q.translate(str.maketrans('', '', string.punctuation)).lower().split()
+    q_terms = [stem_word(w) for w in clean_q_tokens if w not in STOP_WORDS and len(w) > 1]
+    if not q_terms:
+        q_terms = [stem_word(w) for w in clean_q_tokens if len(w) > 1]
 
-    matching_sentences = []
+    extracted_blocks = []
+    seen_blocks = set()
+
     for ctx in contexts:
-        sentences = re.split(r'(?<=[.!?])\s+', ctx)
-        for sent in sentences:
-            sent_lower = sent.lower()
-            score = sum(1 for word in query_words if word in sent_lower)
-            if score > 0:
-                matching_sentences.append((score, sent.strip()))
+        clean_ctx = re.sub(r"^Document Summary:.*?\n\nChunk Content:\n", "", ctx, flags=re.DOTALL).strip()
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', clean_ctx) if p.strip()]
+        
+        for para in paragraphs:
+            para_key = para.lower()
+            if para_key in seen_blocks:
+                continue
+                
+            para_stemmed = {stem_word(w) for w in para.translate(str.maketrans('', '', string.punctuation)).lower().split()}
+            match_count = sum(1 for term in q_terms if term in para_stemmed or any(term in t for t in para_stemmed if len(t) > 3))
+            
+            if match_count > 0 or "summarize" in norm_q.lower() or "main topics" in norm_q.lower():
+                extracted_blocks.append((match_count, para))
+                seen_blocks.add(para_key)
 
-    matching_sentences = sorted(matching_sentences, key=lambda x: x[0], reverse=True)
-    
-    if matching_sentences:
-        seen = set()
-        top_sents = []
-        for _, sent in matching_sentences:
-            if sent not in seen:
-                seen.add(sent)
-                top_sents.append(sent)
-                if len(top_sents) >= 5:
-                    break
-        answer = " ".join(top_sents)
-        return f"[System: Local Fallback Mode]\nBased on the uploaded documents:\n\n{answer}"
-    
-    summary_sents = []
-    for ctx in contexts[:2]:
-        sentences = re.split(r'(?<=[.!?])\s+', ctx)
-        summary_sents.extend(sentences[:2])
-    
-    answer = " ".join(s.strip() for s in summary_sents)
-    return f"[System: Local Fallback Mode]\nSummary of relevant context:\n\n{answer}"
+    if extracted_blocks:
+        extracted_blocks.sort(key=lambda x: x[0], reverse=True)
+        top_blocks = [b[1] for b in extracted_blocks[:3]]
+        formatted_body = "\n\n".join(top_blocks)
+        return f"[System: Local Fallback Mode]\nBased on the uploaded documents:\n\n{formatted_body}"
+
+    first_ctx = contexts[0]
+    clean_first = re.sub(r"^Document Summary:.*?\n\nChunk Content:\n", "", first_ctx, flags=re.DOTALL).strip()
+    return f"[System: Local Fallback Mode]\nBased on the uploaded documents:\n\n{clean_first[:500]}"
 
 
 def run_local_heuristic_entity_extraction(text: str) -> List[Dict[str, Any]]:

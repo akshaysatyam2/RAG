@@ -189,9 +189,13 @@ async def build_contextual_chunks(
                 idx = int((i / total_chunks) * total_pages)
                 page_num = pages_metadata[min(idx, total_pages-1)].get("page_number", 1)
         
-        from backend.database import get_document
-        doc_info = await get_document(doc_id)
-        doc_name = doc_info.get("original_name") if doc_info else "Document"
+        try:
+            from backend.database import get_document
+            doc_info = await get_document(doc_id)
+            doc_name = doc_info.get("original_name") if doc_info else "Document"
+        except Exception:
+            doc_name = "Document"
+
 
         chunk_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}_chunk_{i}"))
         chunk_data = {
