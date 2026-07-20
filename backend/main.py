@@ -273,10 +273,23 @@ def chat_endpoint():
         # 3. Score chunks using cross-encoder
         reranked_chunks = rerank(req.query, expanded_chunks, top_k=req.top_k)
         
-        # 4. Filter by threshold (fallback to top 3 if threshold filters everything out)
+        # 4. Filter by threshold
         filtered_chunks = filter_by_threshold(reranked_chunks, settings.retrieval.similarity_threshold)
         if not filtered_chunks:
-            filtered_chunks = reranked_chunks[:3]
+            top_score = reranked_chunks[0].get("rerank_score", 0.0) if reranked_chunks else 0.0
+            is_overview_query = any(k in req.query.lower() for k in ["summarize", "main topics", "overview", "summary", "tell me about"])
+            if top_score >= 0.05 or is_overview_query:
+                filtered_chunks = reranked_chunks[:3]
+
+        if not filtered_chunks:
+            answer = "No matching information was found in the uploaded documents for your query. I don't have enough information to answer that question."
+            resp = ChatResponse(
+                answer=answer,
+                sources=[],
+                retrieval_metadata={"status": "No relevant context found"}
+            )
+            return jsonify(resp.model_dump())
+
 
 
             
