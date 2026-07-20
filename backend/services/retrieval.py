@@ -75,7 +75,20 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
         dense_results, sparse_results = await asyncio.gather(dense_task, sparse_task)
     except Exception as e:
         logger.warning(f"Hybrid search failed to retrieve results from Qdrant: {e}")
-    
+
+    # Filter out points from deleted or orphan documents not in SQLite
+    try:
+        from backend.database import list_documents
+        active_docs = await list_documents()
+        active_ids = {d["id"] for d in active_docs}
+        if active_ids:
+            dense_results = [p for p in dense_results if getattr(p, "payload", {}).get("document_id") in active_ids]
+            sparse_results = [p for p in sparse_results if getattr(p, "payload", {}).get("document_id") in active_ids]
+        else:
+            dense_results, sparse_results = [], []
+    except Exception as e:
+        logger.warning(f"Failed to filter active document IDs in hybrid search: {e}")
+
     # 3. Fuse results
     fused_results = reciprocal_rank_fusion(
         dense_results, 
@@ -85,6 +98,7 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     
     # Return top_k fused
     return fused_results[:top_k]
+
 
 
 

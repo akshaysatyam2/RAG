@@ -277,7 +277,7 @@ def chat_endpoint():
         filtered_chunks = filter_by_threshold(reranked_chunks, settings.retrieval.similarity_threshold)
         if not filtered_chunks:
             top_score = reranked_chunks[0].get("rerank_score", 0.0) if reranked_chunks else 0.0
-            is_overview_query = any(k in req.query.lower() for k in ["summarize", "main topics", "overview", "summary", "tell me about"])
+            is_overview_query = any(k in req.query.lower() for k in ["summarize", "main topics", "overview", "document summary", "what is this document about"])
             if top_score >= 0.05 or is_overview_query:
                 filtered_chunks = reranked_chunks[:3]
 
@@ -289,6 +289,7 @@ def chat_endpoint():
                 retrieval_metadata={"status": "No relevant context found"}
             )
             return jsonify(resp.model_dump())
+
 
 
 

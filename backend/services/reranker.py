@@ -70,7 +70,7 @@ def normalize_query_text(query: str) -> str:
 def compute_smart_overlap_score(query: str, text: str) -> float:
     """
     Calculates an entity-weighted, stop-word filtered relevance score with stemming support.
-    Gives higher weight to rare terms, proper nouns, and entity matches.
+    Enforces strict matching for target query terms (email, contact, phone, etc.).
     """
     import string
     translator = str.maketrans('', '', string.punctuation)
@@ -85,6 +85,16 @@ def compute_smart_overlap_score(query: str, text: str) -> float:
     if not meaningful_query_terms:
         meaningful_query_terms = query_tokens
 
+    # Enforce strict matching if specific target info terms are requested
+    target_terms = [t for t in meaningful_query_terms if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin"}]
+    if target_terms:
+        has_target = any(
+            stem_word(t) in stemmed_text_tokens or any(stem_word(t) in st for st in stemmed_text_tokens if len(st) > 3)
+            for t in target_terms
+        )
+        if not has_target:
+            return 0.0
+
     score = 0.0
     for term in meaningful_query_terms:
         stemmed_term = stem_word(term)
@@ -95,6 +105,7 @@ def compute_smart_overlap_score(query: str, text: str) -> float:
     max_possible = sum(2.0 if len(t) > 5 or t[0].isupper() else 1.0 for t in meaningful_query_terms)
     normalized_score = score / max(max_possible, 1.0)
     return float(normalized_score)
+
 
 
 
@@ -132,6 +143,27 @@ def rerank(query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Dic
                 text = payload.get("contextualized_text") or payload.get("text") or ""
                 chunk["rerank_score"] = compute_smart_overlap_score(query, text)
 
+    # Post-check: Enforce target info terms (email, contact, phone, etc.)
+    import string
+    translator = str.maketrans('', '', string.punctuation)
+    norm_q = normalize_query_text(query).translate(translator).lower()
+    q_tokens = [w for w in norm_q.split() if w not in STOP_WORDS]
+    target_terms = [t for t in q_tokens if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin"}]
+
+    if target_terms:
+        for chunk in chunks:
+            payload = chunk.get("payload", {})
+            text = (payload.get("contextualized_text") or payload.get("text") or "").translate(translator).lower()
+            text_tokens = set(text.split())
+            stemmed_text = {stem_word(w) for w in text_tokens}
+            has_target = any(
+                stem_word(t) in stemmed_text or any(stem_word(t) in st for st in stemmed_text if len(st) > 3)
+                for t in target_terms
+            )
+            if not has_target:
+                chunk["rerank_score"] = -100.0
+
+
     # Sort by score descending
     sorted_chunks = sorted(chunks, key=lambda x: x.get("rerank_score", -float("inf")), reverse=True)
     return sorted_chunks[:top_k]
@@ -139,19 +171,23 @@ def rerank(query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Dic
 
 
 
+
 def filter_by_threshold(chunks: List[Dict[str, Any]], threshold: float) -> List[Dict[str, Any]]:
     """
     Filter chunks above a given similarity/rerank score threshold.
-    If no chunks meet the threshold, returns top candidate chunks as a fallback.
+    Only returns top candidate chunks as fallback if top_score > 0.0.
     """
     filtered = []
     for chunk in chunks:
         score = chunk.get("rerank_score")
-        if score is not None and score >= threshold:
+        if score is not None and score >= threshold and score > 0.0:
             filtered.append(chunk)
             
     if not filtered and chunks:
-        filtered = chunks[:3]
+        top_score = chunks[0].get("rerank_score", -float("inf"))
+        if top_score > 0.0:
+            filtered = chunks[:3]
 
     return filtered
+
 
