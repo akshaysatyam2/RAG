@@ -126,13 +126,17 @@ def upload_document():
         file_size=file_size
     ))
     
-    # Dispatch Celery task with graceful inline fallback if Redis is not running
+    # Fast check Redis reachability before attempting Celery delay to avoid 15s Kombu reconnect timeout
     try:
+        import redis
+        r = redis.Redis.from_url(settings.redis.url, socket_connect_timeout=0.2)
+        r.ping()
         ingest_document.delay(doc_id, str(file_path), ext.lstrip('.'))
     except Exception as e:
-        app.logger.warning(f"Failed to dispatch Celery task: {e}. Executing ingestion in background thread pool.")
+        app.logger.info(f"Celery/Redis not running ({e}). Executing ingestion immediately in thread pool.")
         from backend.workers.tasks import run_ingestion
         _executor.submit(lambda: run_async(run_ingestion(doc_id, str(file_path), ext.lstrip('.'))))
+
 
     
     resp = DocumentUploadResponse(

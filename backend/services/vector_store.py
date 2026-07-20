@@ -15,7 +15,12 @@ import sys
 
 qdrant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "qdrant"))
 
-if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+# Avoid locking disk storage in the Werkzeug reloader parent watcher process
+is_reloader_parent = os.environ.get("FLASK_RUN_FROM_CLI") or (
+    os.environ.get("WERKZEUG_RUN_MAIN") is None and "flask" in sys.argv[0].lower()
+)
+
+if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") or is_reloader_parent:
     client = AsyncQdrantClient(location=":memory:")
 else:
     try:
@@ -24,6 +29,7 @@ else:
     except Exception as e:
         logger.warning(f"Could not lock Qdrant storage directory: {e}. Falling back to in-memory storage.")
         client = AsyncQdrantClient(location=":memory:")
+
 
 COLLECTION_NAME = settings.qdrant.collection
 # Usually the dense model has a fixed dimension. all-MiniLM-L6-v2 is 384.
