@@ -61,16 +61,7 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     """
     # 1. Get query vectors
     dense_vector = get_dense_embedding(query)
-    query_tokens = tokenize_for_sparse(query)
-    vocab = {token: idx for idx, token in enumerate(set(query_tokens))}
-    indices = []
-    values = []
-    for token in query_tokens:
-        if token in vocab:
-            indices.append(vocab[token])
-            values.append(1.0) # Simple TF
-            
-    sparse_vector = {"indices": indices, "values": values}
+    sparse_vector = compute_sparse_vector(query)
     
     dense_results, sparse_results = [], []
     
