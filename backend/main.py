@@ -314,9 +314,12 @@ def chat_endpoint():
         context_str = "\n\n".join(context_texts)
         
         system_prompt = (
-            "You are a helpful AI assistant. Answer the user's question ONLY based on the provided context. "
+            "You are an expert AI assistant. Synthesize a concise, well-structured executive summary "
+            "answering the user's question directly based ONLY on the provided context. Use bullet points and clear formatting. "
+            "Do NOT dump raw unformatted text or verbatim document chunks. "
             "If the context does not contain sufficient information, explicitly state that you cannot answer."
         )
+
         
         history_str = ""
         if req.history:

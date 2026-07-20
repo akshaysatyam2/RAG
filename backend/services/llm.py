@@ -44,10 +44,40 @@ async def check_llm_availability() -> bool:
     return _llm_online
 
 
+def synthesize_concise_summary(top_blocks: List[str], query: str) -> str:
+    """
+    Synthesizes verbatim text blocks into a clean, bulleted executive summary.
+    """
+    if not top_blocks:
+        return "No matching information was found in the uploaded documents for your query."
+
+    combined_lines = []
+    seen = set()
+    for block in top_blocks:
+        lines = [l.strip() for l in block.split("\n") if l.strip()]
+        for line in lines:
+            line_clean = re.sub(r"^[●•\-\*]\s*", "", line).strip()
+            if not line_clean or line_clean in seen or line_clean.startswith("[") or line_clean.startswith("Source"):
+                continue
+            seen.add(line_clean)
+            combined_lines.append(line_clean)
+
+    if not combined_lines:
+        return "No matching information was found in the uploaded documents for your query."
+
+    summary_bullets = []
+    for line in combined_lines[:6]:
+        summary_bullets.append(f"• {line}")
+
+    summary_text = "\n".join(summary_bullets)
+    return f"**Summary of Relevant Information:**\n\n{summary_text}"
+
+
 def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
     """
     Fallback completion when local LLM server (Ollama) is offline or unresponsive.
     Uses possessive normalization, stemming, and paragraph block extraction from prompt context.
+    Synthesizes concise bulleted summary instead of dumping whole verbatim documents.
     """
     from backend.services.reranker import normalize_query_text, stem_word, STOP_WORDS
 
@@ -103,12 +133,12 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
     if extracted_blocks:
         extracted_blocks.sort(key=lambda x: x[0], reverse=True)
         top_blocks = [b[1] for b in extracted_blocks[:3]]
-        formatted_body = "\n\n".join(top_blocks)
-        return f"[System: Local Fallback Mode]\nBased on the uploaded documents:\n\n{formatted_body}"
+        return synthesize_concise_summary(top_blocks, query)
 
     first_ctx = contexts[0]
     clean_first = re.sub(r"^Document Summary:.*?\n\nChunk Content:\n", "", first_ctx, flags=re.DOTALL).strip()
-    return f"[System: Local Fallback Mode]\nBased on the uploaded documents:\n\n{clean_first[:500]}"
+    return synthesize_concise_summary([clean_first[:500]], query)
+
 
 
 def run_local_heuristic_entity_extraction(text: str) -> List[Dict[str, Any]]:
