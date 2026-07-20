@@ -143,12 +143,14 @@ def upload_document():
         id=doc_id,
         filename=filename,
         original_name=file.filename,
+        name=file.filename,
         file_type=ext.lstrip('.'),
         file_size=file_size,
         status="pending",
         message="Upload successful, ingestion started."
     )
     return jsonify(resp.model_dump()), 202
+
 
 
 # List Documents Endpoint

@@ -84,19 +84,27 @@ export async function refreshDocuments() {
             return;
         }
 
-        list.innerHTML = docs.map(doc => `
+        list.innerHTML = docs.map(doc => {
+            const displayName = doc.name || doc.original_name || 'Document';
+            const summaryText = doc.summary ? doc.summary.replace(/^\[Local Summary Fallback\]\s*/, '') : '';
+            const summaryHtml = summaryText
+                ? `<div class="doc-summary" style="font-size: 0.75rem; color: var(--text-secondary); margin: 6px 0; line-height: 1.35; max-height: 3.8em; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;" title="${summaryText}">${summaryText}</div>`
+                : '';
+            return `
             <div class="doc-card" id="doc-${doc.id}">
                 <div class="doc-header">
-                    <span class="doc-title" title="${doc.name || 'Document'}">${doc.name || 'Unnamed Document'}</span>
+                    <span class="doc-title" title="${displayName}">${displayName}</span>
                     <button class="delete-btn" data-id="${doc.id}" title="Delete document">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
                 </div>
-                <div class="doc-status">
+                ${summaryHtml}
+                <div class="doc-status" style="margin-top: 4px;">
                     <span class="status-badge status-${doc.status.toLowerCase()}">${doc.status}</span>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
 
         list.querySelectorAll('.delete-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {

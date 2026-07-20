@@ -7,6 +7,7 @@ class DocumentUploadResponse(BaseModel):
     id: str
     filename: str
     original_name: str
+    name: str
     file_type: str
     file_size: int
     status: str
@@ -17,14 +18,17 @@ class DocumentMetadata(BaseModel):
     id: str
     filename: str
     original_name: str
+    name: str
     file_type: str
     file_size: int
     page_count: int = 0
     chunk_count: int = 0
     status: str
+    summary: Optional[str] = None
     error_message: Optional[str] = None
     created_at: str
     updated_at: str
+
 
 
 class DocumentListResponse(BaseModel):

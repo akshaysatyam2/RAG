@@ -219,4 +219,5 @@ async def build_contextual_chunks(
 
         
     await report_progress("Complete", 5, 5, "Ingestion pipeline complete.")
-    return structured_chunks
+    return structured_chunks, doc_summary
+

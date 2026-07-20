@@ -126,11 +126,12 @@ async def run_comprehensive_rag_test():
     print("\n[TEST 3] Testing Contextual Chunk Pipeline...")
     pages = [{"page_number": 1, "text": SAMPLE_DOCUMENT_TEXT[:500]}, {"page_number": 2, "text": SAMPLE_DOCUMENT_TEXT[500:]}]
     
-    structured_chunks = await build_contextual_chunks(
+    structured_chunks, doc_summary = await build_contextual_chunks(
         doc_id=test_doc_id,
         raw_text=SAMPLE_DOCUMENT_TEXT,
         pages_metadata=pages
     )
+
     
     t3_pass = len(structured_chunks) > 0 and all("text" in sc["metadata"] for sc in structured_chunks)
     print(f"  Structured Chunks Created: {len(structured_chunks)}")

@@ -46,14 +46,14 @@ async def run_ingestion(doc_id: str, file_path: str, file_type: str):
             await upsert_ingestion_progress(doc_id, phase, step, total, msg)
 
         # Phase 2: Contextual chunking, embedding generation, entity extraction
-        chunks = await build_contextual_chunks(
+        chunks, doc_summary = await build_contextual_chunks(
             doc_id=doc_id,
             raw_text=raw_text,
             pages_metadata=pages,
             progress_callback=progress_callback
         )
         chunk_count = len(chunks)
-        await update_document_status(doc_id, "processing", chunk_count=chunk_count)
+        await update_document_status(doc_id, "processing", chunk_count=chunk_count, summary=doc_summary)
 
         if chunk_count == 0:
             await update_document_status(doc_id, "ready", error_message="No chunks created")
@@ -74,8 +74,9 @@ async def run_ingestion(doc_id: str, file_path: str, file_type: str):
             await insert_entities_and_relations(doc_id, all_triples)
         await upsert_ingestion_progress(doc_id, "graph_store", 1, 1, f"Graph storage complete. Ingested {len(all_triples)} relations.")
 
-        await update_document_status(doc_id, "ready")
+        await update_document_status(doc_id, "ready", summary=doc_summary)
         return f"Successfully ingested document {doc_id}"
+
     except Exception as e:
         logger.error(f"Error executing ingestion for document {doc_id}: {e}", exc_info=True)
         await update_document_status(doc_id, "error", error_message=str(e))

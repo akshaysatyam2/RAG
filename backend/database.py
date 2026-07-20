@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS documents (
     page_count INTEGER DEFAULT 0,
     chunk_count INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending',
+    summary TEXT,
     error_message TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -65,6 +66,11 @@ async def initialize_schema():
     try:
         await conn.executescript(SCHEMA)
         await conn.commit()
+        try:
+            await conn.execute("ALTER TABLE documents ADD COLUMN summary TEXT")
+            await conn.commit()
+        except Exception:
+            pass
     finally:
         await conn.close()
 
@@ -82,8 +88,8 @@ async def insert_document(doc_id: str, filename: str, original_name: str,
         await conn.commit()
         return {
             "id": doc_id, "filename": filename, "original_name": original_name,
-            "file_type": file_type, "file_size": file_size, "status": "pending",
-            "page_count": 0, "chunk_count": 0, "created_at": now, "updated_at": now,
+            "name": original_name, "file_type": file_type, "file_size": file_size, "status": "pending",
+            "page_count": 0, "chunk_count": 0, "summary": None, "created_at": now, "updated_at": now,
         }
     finally:
         await conn.close()
@@ -91,7 +97,7 @@ async def insert_document(doc_id: str, filename: str, original_name: str,
 
 async def update_document_status(doc_id: str, status: str,
                                  page_count: int = None, chunk_count: int = None,
-                                 error_message: str = None):
+                                 summary: str = None, error_message: str = None):
     now = datetime.now(timezone.utc).isoformat()
     conn = await get_connection()
     try:
@@ -104,6 +110,9 @@ async def update_document_status(doc_id: str, status: str,
         if chunk_count is not None:
             fields.append("chunk_count = ?")
             values.append(chunk_count)
+        if summary is not None:
+            fields.append("summary = ?")
+            values.append(summary)
         if error_message is not None:
             fields.append("error_message = ?")
             values.append(error_message)
@@ -116,6 +125,7 @@ async def update_document_status(doc_id: str, status: str,
         await conn.close()
 
 
+
 async def get_document(doc_id: str) -> dict | None:
     conn = await get_connection()
     try:
@@ -123,7 +133,9 @@ async def get_document(doc_id: str) -> dict | None:
         row = await cursor.fetchone()
         if row is None:
             return None
-        return dict(row)
+        d = dict(row)
+        d["name"] = d.get("original_name", "Document")
+        return d
     finally:
         await conn.close()
 
@@ -133,9 +145,15 @@ async def list_documents() -> list[dict]:
     try:
         cursor = await conn.execute("SELECT * FROM documents ORDER BY created_at DESC")
         rows = await cursor.fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["name"] = d.get("original_name", "Document")
+            result.append(d)
+        return result
     finally:
         await conn.close()
+
 
 
 async def delete_document(doc_id: str) -> bool:

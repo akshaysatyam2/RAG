@@ -67,14 +67,15 @@ async def test_build_contextual_chunks():
         async def progress_cb(phase, step, total, msg):
             progress_calls.append((phase, step, total, msg))
             
-        chunks = await build_contextual_chunks(
+        chunks, doc_summary = await build_contextual_chunks(
             doc_id="doc_123",
             raw_text=raw_text,
             pages_metadata=pages,
             progress_callback=progress_cb
         )
-        
+        assert doc_summary == "Document summary text"
         assert len(chunks) == 1
+
         import uuid
         assert chunks[0]["id"] == str(uuid.uuid5(uuid.NAMESPACE_DNS, "doc_123_chunk_0"))
         assert chunks[0]["text"] == raw_text
