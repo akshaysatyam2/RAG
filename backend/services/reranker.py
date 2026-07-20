@@ -94,6 +94,11 @@ def has_target_info(term: str, raw_text: str) -> bool:
         if any(k in raw_lower for k in ["location", "address", "city", "bengaluru", "pune", "delhi", "mumbai", "india", "ka", "mh"]):
             return True
 
+    if t_lower in {"education", "school", "college", "university", "degree"}:
+        if any(k in raw_lower for k in ["education", "school", "college", "university", "bachelor", "master", "degree", "b.tech", "btech", "mtech", "b.e", "be"]):
+            return True
+        return False
+
     # Fallback: token overlap or stemming
     import string
     translator = str.maketrans('', '', string.punctuation)
@@ -121,7 +126,7 @@ def compute_smart_overlap_score(query: str, text: str) -> float:
         meaningful_query_terms = query_tokens
 
     # Enforce strict matching if specific target info terms are requested
-    target_terms = [t for t in meaningful_query_terms if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin"}]
+    target_terms = [t for t in meaningful_query_terms if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin", "education", "school", "college", "university", "degree"}]
     if target_terms:
         has_target = any(has_target_info(t, text) for t in target_terms)
         if not has_target:
@@ -184,7 +189,8 @@ def rerank(query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Dic
     translator = str.maketrans('', '', string.punctuation)
     norm_q = normalize_query_text(query).translate(translator).lower()
     q_tokens = [w for w in norm_q.split() if w not in STOP_WORDS]
-    target_terms = [t for t in q_tokens if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin"}]
+    target_terms = [t for t in q_tokens if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin", "education", "school", "college", "university", "degree"}]
+
 
     if target_terms:
         for chunk in chunks:
