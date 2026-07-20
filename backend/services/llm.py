@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from typing import Optional, Dict, Any, List
 
 from openai import AsyncOpenAI
@@ -11,12 +12,36 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize OpenAI client using settings
+# Fast circuit breaker to prevent repeated timeouts when LLM server is offline
+_llm_online: Optional[bool] = None
+_llm_last_checked: float = 0.0
+_LLM_CHECK_INTERVAL = 30.0  # seconds to re-test LLM connectivity after failure
+
 client = AsyncOpenAI(
     base_url=settings.llm.base_url,
     api_key=settings.llm.api_key,
-    timeout=5.0,
+    timeout=1.5,
 )
+
+
+async def check_llm_availability() -> bool:
+    """
+    Checks if the local LLM server is reachable within a tight window.
+    Caches status to avoid per-chunk HTTP connection timeouts when offline.
+    """
+    global _llm_online, _llm_last_checked
+    now = time.time()
+    if _llm_online is not None and (now - _llm_last_checked) < _LLM_CHECK_INTERVAL:
+        return _llm_online
+
+    try:
+        await client.models.list()
+        _llm_online = True
+    except Exception:
+        _llm_online = False
+
+    _llm_last_checked = now
+    return _llm_online
 
 
 def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
@@ -24,7 +49,6 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
     Fallback rule-based text generation when LLM is unreachable.
     Uses simple keyword matching and sentence extraction from the prompt context.
     """
-    # Extract query/question from the prompt
     query = user_prompt
     query_match = re.search(r'(?:Query|Question|User Request):\s*(.*?)$', user_prompt, re.DOTALL | re.IGNORECASE)
     if query_match:
@@ -34,10 +58,8 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
         if lines:
             query = lines[-1]
 
-    # Look for chunks of text or "Context:" in the prompt
     context_matches = re.findall(r'(?:Context|Source|Chunk|Document).*?:\s*(.*?)(?=\n\n|\n[A-Z]|$)', user_prompt, re.DOTALL | re.IGNORECASE)
     if not context_matches:
-        # Fallback to double newline split
         parts = user_prompt.split("\n\n")
         context_matches = [p for p in parts if len(p.split()) > 15]
 
@@ -49,7 +71,6 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
             "and no document context was found to extract an answer."
         )
 
-    # Keywords from query
     query_words = [w.lower().replace("?", "").replace(".", "") for w in query.split() if len(w) > 3]
     if not query_words:
         query_words = ["resume", "experience", "akshay", "skills", "education", "project"]
@@ -63,7 +84,6 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
             if score > 0:
                 matching_sentences.append((score, sent.strip()))
 
-    # Sort matching sentences by score descending
     matching_sentences = sorted(matching_sentences, key=lambda x: x[0], reverse=True)
     
     if matching_sentences:
@@ -78,7 +98,6 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
         answer = " ".join(top_sents)
         return f"[System: Local Fallback Mode]\nBased on the uploaded documents:\n\n{answer}"
     
-    # Heuristic fallback summary if no direct matches
     summary_sents = []
     for ctx in contexts[:2]:
         sentences = re.split(r'(?<=[.!?])\s+', ctx)
@@ -93,7 +112,6 @@ def run_local_heuristic_entity_extraction(text: str) -> List[Dict[str, Any]]:
     Fallback regex-based entity extraction when LLM is unreachable.
     Finds capitalized phrases and links them using simple context rules.
     """
-    # Find capitalized words (Entities)
     words = re.findall(r'\b[A-Z][a-zA-Z0-9_]{2,}(?:\s+[A-Z][a-zA-Z0-9_]{2,})*\b', text)
     noise = {"The", "And", "For", "With", "This", "That", "From", "Document", "Summary", "Chunk", "Content"}
     entities = list(set([w for w in words if w not in noise]))
@@ -132,11 +150,10 @@ def run_local_heuristic_entity_extraction(text: str) -> List[Dict[str, Any]]:
 @retry(
     retry=(
         retry_if_exception_type(RateLimitError) |
-        retry_if_exception_type(APIConnectionError) |
         retry_if_exception_type(APIError)
     ),
-    wait=wait_exponential(multiplier=1, min=2, max=10),
-    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=4),
+    stop=stop_after_attempt(2),
     reraise=True
 )
 async def generate_completion_raw(system_prompt: str, user_prompt: str, temperature: Optional[float] = None) -> str:
@@ -160,10 +177,15 @@ async def generate_completion(system_prompt: str, user_prompt: str, temperature:
     """
     Generate completion with automatic local heuristic fallback if LLM is down.
     """
+    if not await check_llm_availability():
+        return run_local_heuristic_completion(system_prompt, user_prompt)
+
     try:
         return await generate_completion_raw(system_prompt, user_prompt, temperature)
     except Exception as e:
         logger.warning(f"LLM Connection failed: {e}. Falling back to local heuristic completion.")
+        global _llm_online
+        _llm_online = False
         return run_local_heuristic_completion(system_prompt, user_prompt)
 
 
@@ -174,6 +196,11 @@ async def generate_context_summary(document_text: str) -> str:
     max_chars = 15000
     text_to_summarize = document_text[:max_chars]
     
+    if not await check_llm_availability():
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text_to_summarize) if s.strip()]
+        summary = " ".join(sentences[:3])
+        return f"[Local Summary Fallback] {summary}"
+
     try:
         system_prompt = (
             "You are an expert summarizer. Provide a concise, high-level summary of the "
@@ -183,6 +210,8 @@ async def generate_context_summary(document_text: str) -> str:
         return await generate_completion_raw(system_prompt, user_prompt, temperature=0.1)
     except Exception as e:
         logger.warning(f"LLM context summary failed: {e}. Using local heuristic summary.")
+        global _llm_online
+        _llm_online = False
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text_to_summarize) if s.strip()]
         summary = " ".join(sentences[:3])
         return f"[Local Summary Fallback] {summary}"
@@ -192,6 +221,9 @@ async def extract_entities_and_relations(chunk_text: str) -> List[Dict[str, Any]
     """
     Extracts entity-relation triples as structured JSON, falling back to regex if needed.
     """
+    if not await check_llm_availability():
+        return run_local_heuristic_entity_extraction(chunk_text)
+
     system_prompt = (
         "You are an expert information extraction system. Extract entity-relation triples "
         "from the provided text. Return ONLY a valid JSON array of objects. "
@@ -217,4 +249,6 @@ async def extract_entities_and_relations(chunk_text: str) -> List[Dict[str, Any]
         return triples
     except Exception as e:
         logger.warning(f"LLM entity extraction failed: {e}. Using regex-based heuristic extractor.")
+        global _llm_online
+        _llm_online = False
         return run_local_heuristic_entity_extraction(chunk_text)
