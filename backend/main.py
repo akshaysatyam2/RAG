@@ -244,16 +244,19 @@ def chat_endpoint():
             
         for path in graph_context:
             nodes = path.get("path_nodes", [])
-            path_str = " -> ".join([n.get("name", "") for n in nodes])
-            if path_str:
+            names = [n.get("name", "").strip() for n in nodes if n.get("name", "").strip()]
+            # Filter out single-word action verbs as head nodes
+            if len(names) >= 2 and names[0].lower() not in {"architected", "led", "developed", "aug", "built"}:
+                humanized_relation = f"{names[0]} is related to {names[-1]}"
                 expanded_chunks.append({
                     "id": f"graph_{uuid.uuid4()}",
                     "payload": {
-                        "text": f"Knowledge Graph Relationship: {path_str}",
+                        "text": humanized_relation,
                         "document_id": "graph_db",
                         "document_name": "Knowledge Graph"
                     }
                 })
+
                 
         if not expanded_chunks:
             # Check if user has uploaded any documents

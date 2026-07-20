@@ -47,9 +47,23 @@ async def check_llm_availability() -> bool:
 def synthesize_concise_summary(top_blocks: List[str], query: str) -> str:
     """
     Synthesizes verbatim text blocks into a clean, bulleted executive summary.
+    Prioritizes lines that match the specific user query terms.
     """
+    from backend.services.reranker import normalize_query_text, stem_word, STOP_WORDS
+    import string
+
     if not top_blocks:
         return "No matching information was found in the uploaded documents for your query."
+
+    translator = str.maketrans('', '', string.punctuation)
+    norm_q = normalize_query_text(query)
+    q_terms = {stem_word(w) for w in norm_q.translate(translator).lower().split() if w not in STOP_WORDS and len(w) > 1}
+    
+    # Domain synonym expansions
+    if any(k in norm_q.lower() for k in ["college", "university", "school", "education", "degree"]):
+        q_terms.update({"education", "university", "college", "degree", "bachelor", "master", "school", "bcacs", "cgpa"})
+    if any(k in norm_q.lower() for k in ["rag", "llm", "framework", "embeddings"]):
+        q_terms.update({"rag", "framework", "llms", "vector", "embeddings", "tokenizers"})
 
     combined_lines = []
     seen = set()
@@ -60,17 +74,23 @@ def synthesize_concise_summary(top_blocks: List[str], query: str) -> str:
             if not line_clean or line_clean in seen or line_clean.startswith("[") or line_clean.startswith("Source"):
                 continue
             seen.add(line_clean)
-            combined_lines.append(line_clean)
+            
+            line_stemmed = {stem_word(w) for w in line_clean.translate(translator).lower().split()}
+            score = sum(1 for term in q_terms if term in line_stemmed or any(term in st for st in line_stemmed if len(st) > 3))
+            combined_lines.append((score, line_clean))
 
     if not combined_lines:
         return "No matching information was found in the uploaded documents for your query."
 
+    combined_lines.sort(key=lambda x: x[0], reverse=True)
+
     summary_bullets = []
-    for line in combined_lines[:6]:
+    for score, line in combined_lines[:5]:
         summary_bullets.append(f"• {line}")
 
     summary_text = "\n".join(summary_bullets)
     return f"**Summary of Relevant Information:**\n\n{summary_text}"
+
 
 
 def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
@@ -105,11 +125,14 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
         )
 
     import string
+    from backend.services.retrieval import expand_query_terms
     norm_q = normalize_query_text(query)
-    clean_q_tokens = norm_q.translate(str.maketrans('', '', string.punctuation)).lower().split()
+    expanded_q_str = expand_query_terms(norm_q)
+    clean_q_tokens = expanded_q_str.translate(str.maketrans('', '', string.punctuation)).lower().split()
     q_terms = [stem_word(w) for w in clean_q_tokens if w not in STOP_WORDS and len(w) > 1]
     if not q_terms:
         q_terms = [stem_word(w) for w in clean_q_tokens if len(w) > 1]
+
 
     extracted_blocks = []
     seen_blocks = set()

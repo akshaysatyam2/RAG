@@ -55,16 +55,44 @@ def reciprocal_rank_fusion(
     return merged_results
 
 
+def expand_query_terms(query: str) -> str:
+    """
+    Expands query terms with domain synonyms (e.g. college -> education, university, degree)
+    to boost hybrid retrieval recall for conceptual queries.
+    """
+    q_lower = query.lower()
+    expansions = []
+    
+    if any(k in q_lower for k in ["college", "university", "school", "education", "degree", "studies", "academics", "graduat"]):
+        expansions.extend(["education", "university", "college", "degree", "bachelor", "master", "school", "cgpa", "academics"])
+
+    if any(k in q_lower for k in ["project", "built", "developed", "created", "architected", "system"]):
+        expansions.extend(["projects", "engineered", "developed", "architected", "system", "github"])
+
+    if any(k in q_lower for k in ["work", "job", "experience", "company", "role", "position", "career", "intern"]):
+        expansions.extend(["experience", "work", "engineer", "developer", "intern", "company", "role"])
+
+    if any(k in q_lower for k in ["skill", "stack", "tools", "languages", "frameworks", "technologies"]):
+        expansions.extend(["skills", "frameworks", "technologies", "languages", "tools", "infrastructure"])
+
+    if expansions:
+        unique_exp = list(dict.fromkeys(expansions))
+        return f"{query} {' '.join(unique_exp)}"
+    return query
+
+
 async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     """
     Runs dense+sparse in parallel, fuses with RRF.
     """
     from backend.services.reranker import normalize_query_text
     norm_query = normalize_query_text(query)
+    expanded_q = expand_query_terms(norm_query)
 
     # 1. Get query vectors
-    dense_vector = get_dense_embedding(norm_query)
-    sparse_vector = compute_sparse_vector(norm_query)
+    dense_vector = get_dense_embedding(expanded_q)
+    sparse_vector = compute_sparse_vector(expanded_q)
+
     
     dense_results, sparse_results = [], []
     
