@@ -67,6 +67,41 @@ def normalize_query_text(query: str) -> str:
     q_norm = re.sub(r"['’]s\b", "", query, flags=re.IGNORECASE)
     return q_norm.strip()
 
+def has_target_info(term: str, raw_text: str) -> bool:
+    """
+    Checks if a target query term (like 'email', 'contact', 'phone') is matched
+    either by literal token or by pattern matching (e.g., regex for email address or phone number).
+    """
+    if not raw_text or not term:
+        return False
+        
+    t_lower = term.lower()
+    raw_lower = raw_text.lower()
+    
+    if t_lower == "email":
+        if "email" in raw_lower or "mail" in raw_lower:
+            return True
+        return bool(re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", raw_text))
+
+    if t_lower in {"contact", "phone", "mobile"}:
+        if any(k in raw_lower for k in ["contact", "phone", "mobile", "tel", "linkedin", "portfolio", "github"]):
+            return True
+        if re.search(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", raw_text):
+            return True
+        return bool(re.search(r"\+?\d[\d\s-]{7,}\d", raw_text))
+
+    if t_lower in {"location", "address", "city"}:
+        if any(k in raw_lower for k in ["location", "address", "city", "bengaluru", "pune", "delhi", "mumbai", "india", "ka", "mh"]):
+            return True
+
+    # Fallback: token overlap or stemming
+    import string
+    translator = str.maketrans('', '', string.punctuation)
+    clean_t = stem_word(t_lower)
+    clean_text_tokens = {stem_word(w) for w in raw_lower.translate(translator).split() if w}
+    return clean_t in clean_text_tokens or any(clean_t in st for st in clean_text_tokens if len(st) > 3)
+
+
 def compute_smart_overlap_score(query: str, text: str) -> float:
     """
     Calculates an entity-weighted, stop-word filtered relevance score with stemming support.
@@ -88,19 +123,20 @@ def compute_smart_overlap_score(query: str, text: str) -> float:
     # Enforce strict matching if specific target info terms are requested
     target_terms = [t for t in meaningful_query_terms if t in {"email", "contact", "phone", "address", "location", "salary", "github", "linkedin"}]
     if target_terms:
-        has_target = any(
-            stem_word(t) in stemmed_text_tokens or any(stem_word(t) in st for st in stemmed_text_tokens if len(st) > 3)
-            for t in target_terms
-        )
+        has_target = any(has_target_info(t, text) for t in target_terms)
         if not has_target:
             return 0.0
 
     score = 0.0
     for term in meaningful_query_terms:
         stemmed_term = stem_word(term)
-        if stemmed_term in stemmed_text_tokens or any(stemmed_term in t for t in stemmed_text_tokens if len(t) > 3):
+        if has_target_info(term, text):
+            weight = 2.0
+            score += weight
+        elif stemmed_term in stemmed_text_tokens or any(stemmed_term in t for t in stemmed_text_tokens if len(t) > 3):
             weight = 2.0 if len(term) > 5 or term[0].isupper() else 1.0
             score += weight
+
 
     max_possible = sum(2.0 if len(t) > 5 or t[0].isupper() else 1.0 for t in meaningful_query_terms)
     normalized_score = score / max(max_possible, 1.0)
@@ -153,15 +189,11 @@ def rerank(query: str, chunks: List[Dict[str, Any]], top_k: int = 5) -> List[Dic
     if target_terms:
         for chunk in chunks:
             payload = chunk.get("payload", {})
-            text = (payload.get("contextualized_text") or payload.get("text") or "").translate(translator).lower()
-            text_tokens = set(text.split())
-            stemmed_text = {stem_word(w) for w in text_tokens}
-            has_target = any(
-                stem_word(t) in stemmed_text or any(stem_word(t) in st for st in stemmed_text if len(st) > 3)
-                for t in target_terms
-            )
+            raw_text = payload.get("contextualized_text") or payload.get("text") or ""
+            has_target = any(has_target_info(t, raw_text) for t in target_terms)
             if not has_target:
                 chunk["rerank_score"] = -100.0
+
 
 
     # Sort by score descending
