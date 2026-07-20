@@ -43,20 +43,24 @@ async def test_upsert_chunks(mock_qdrant):
 @pytest.mark.asyncio
 async def test_search_dense(mock_qdrant):
     mock_result = models.ScoredPoint(id="1", score=0.9, version=1, values=None, payload={"text": "test"})
-    mock_qdrant.search = AsyncMock(return_value=[mock_result])
+    mock_response = MagicMock()
+    mock_response.points = [mock_result]
+    mock_qdrant.query_points = AsyncMock(return_value=mock_response)
     
     results = await search_dense([0.1] * 384, top_k=5)
     assert results == [mock_result]
-    mock_qdrant.search.assert_called_once()
+    mock_qdrant.query_points.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_search_sparse(mock_qdrant):
     mock_result = models.ScoredPoint(id="1", score=0.8, version=1, values=None, payload={"text": "test"})
-    mock_qdrant.search = AsyncMock(return_value=[mock_result])
+    mock_response = MagicMock()
+    mock_response.points = [mock_result]
+    mock_qdrant.query_points = AsyncMock(return_value=mock_response)
     
     results = await search_sparse({"indices": [1], "values": [0.5]}, top_k=5)
     assert results == [mock_result]
-    mock_qdrant.search.assert_called_once()
+    mock_qdrant.query_points.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -67,7 +71,10 @@ async def test_delete_by_document(mock_qdrant):
 
 @pytest.mark.asyncio
 async def test_search_no_results(mock_qdrant):
-    mock_qdrant.search = AsyncMock(return_value=[])
+    mock_response = MagicMock()
+    mock_response.points = []
+    mock_qdrant.query_points = AsyncMock(return_value=mock_response)
     results = await search_dense([0.1] * 384, top_k=5)
     assert results == []
+
 

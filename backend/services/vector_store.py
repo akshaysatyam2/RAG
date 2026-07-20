@@ -85,6 +85,8 @@ async def upsert_chunks(doc_id: str, chunks: List[Dict[str, Any]]):
     Batch upsert chunks with metadata to Qdrant.
     chunks should be a list of dictionaries, each containing:
     - 'id': optional chunk id, else generated
+    - 'text': chunk text content
+    - 'contextualized_text': text prepended with summary context
     - 'dense_vector': List[float]
     - 'sparse_vector': Dict with 'indices' and 'values'
     - 'metadata': Dictionary of metadata to store
@@ -94,11 +96,20 @@ async def upsert_chunks(doc_id: str, chunks: List[Dict[str, Any]]):
 
     points = []
     for chunk in chunks:
-        point_id = chunk.get("id") or str(uuid.uuid4())
+        raw_id = chunk.get("id") or str(uuid.uuid4())
+        # Ensure point_id is a valid UUID string
+        try:
+            point_id = str(uuid.UUID(str(raw_id)))
+        except ValueError:
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_id)))
         
-        # Ensure metadata contains the document_id
-        payload = chunk.get("metadata", {})
+        # Build payload ensuring document_id, text, and contextualized_text are included
+        payload = dict(chunk.get("metadata", {}))
         payload["document_id"] = doc_id
+        if "text" not in payload and "text" in chunk:
+            payload["text"] = chunk["text"]
+        if "contextualized_text" not in payload and "contextualized_text" in chunk:
+            payload["contextualized_text"] = chunk["contextualized_text"]
         
         dense_vec = chunk.get("dense_vector", [])
         sparse_vec_data = chunk.get("sparse_vector", {"indices": [], "values": []})
@@ -150,17 +161,15 @@ async def search_dense(query_vector: List[float], top_k: int, doc_filter: Option
         )
         
     try:
-        results = await client.search(
+        res = await client.query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=models.NamedVector(
-                name="dense",
-                vector=query_vector
-            ),
+            using="dense",
+            query=query_vector,
             query_filter=filter_params,
             limit=top_k,
             with_payload=True
         )
-        return results
+        return res.points
     except Exception as e:
         logger.error(f"Error searching dense vectors: {e}")
         return []
@@ -182,20 +191,18 @@ async def search_sparse(sparse_vector: Dict[str, Any], top_k: int, doc_filter: O
         )
         
     try:
-        results = await client.search(
+        res = await client.query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=models.NamedSparseVector(
-                name="sparse",
-                vector=models.SparseVector(
-                    indices=sparse_vector.get("indices", []),
-                    values=sparse_vector.get("values", [])
-                )
+            using="sparse",
+            query=models.SparseVector(
+                indices=sparse_vector.get("indices", []),
+                values=sparse_vector.get("values", [])
             ),
             query_filter=filter_params,
             limit=top_k,
             with_payload=True
         )
-        return results
+        return res.points
     except Exception as e:
         logger.error(f"Error searching sparse vectors: {e}")
         return []
@@ -232,10 +239,11 @@ async def get_collection_info() -> Dict[str, Any]:
     try:
         collection_info = await client.get_collection(collection_name=COLLECTION_NAME)
         return {
-            "status": collection_info.status,
-            "vectors_count": collection_info.vectors_count,
-            "points_count": collection_info.points_count
+            "status": str(collection_info.status),
+            "points_count": getattr(collection_info, "points_count", 0),
+            "indexed_vectors_count": getattr(collection_info, "indexed_vectors_count", 0)
         }
     except Exception as e:
         logger.error(f"Error getting collection info: {e}")
         return {}
+
