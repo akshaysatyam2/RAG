@@ -54,42 +54,61 @@ def parse_image(file_path: str) -> str:
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     """
-    Split text into chunks of `chunk_size` characters with `overlap` overlap.
-    Ensures start always advances to prevent infinite loops.
+    Structural & Semantic Chunker:
+    Splits text along section headers, paragraph boundaries (\n\n), and sentence endings (. ! ?).
+    Ensures no chunk starts or ends with partial/truncated words or broken phrases.
     """
-    if not text:
+    if not text or not text.strip():
         return []
-        
+
+    text = text.strip()
+    import re
+
+    # Split into paragraphs by double newlines or section headers
+    raw_paragraphs = re.split(r'\n\s*\n|\n(?=[0-9]+\.|\b[A-Z][A-Za-z0-9\s]{2,}:)', text)
+    paragraphs = [p.strip() for p in raw_paragraphs if p and p.strip()]
+
     chunks = []
-    start = 0
-    text_length = len(text)
-    
-    while start < text_length:
-        end = min(start + chunk_size, text_length)
-        chunk = text[start:end]
+    current_chunk_paragraphs = []
+    current_length = 0
+
+    for para in paragraphs:
+        para_len = len(para)
         
-        # Adjust end to nearest whitespace if not at the end of the text
-        if end < text_length:
-            last_space = chunk.rfind(' ')
-            if last_space != -1 and last_space > chunk_size // 2:
-                end = start + last_space
+        # If single paragraph is larger than chunk_size, split by sentences
+        if para_len > chunk_size:
+            sentences = re.split(r'(?<=[.!?])\s+', para)
+            for sent in sentences:
+                sent = sent.strip()
+                if not sent:
+                    continue
+                if current_length + len(sent) + 1 > chunk_size and current_chunk_paragraphs:
+                    chunk_str = "\n\n".join(current_chunk_paragraphs).strip()
+                    if chunk_str:
+                        chunks.append(chunk_str)
+                    current_chunk_paragraphs = [current_chunk_paragraphs[-1]] if current_chunk_paragraphs else []
+                    current_length = sum(len(p) for p in current_chunk_paragraphs)
                 
-        # Ensure progress is made
-        if end <= start:
-            end = start + chunk_size
-            
-        chunks.append(text[start:end].strip())
-        
-        if end >= text_length:
-            break
-            
-        next_start = end - overlap
-        if next_start <= start:
-            start = start + 1
+                current_chunk_paragraphs.append(sent)
+                current_length += len(sent) + 1
         else:
-            start = next_start
-            
+            if current_length + para_len + 2 > chunk_size and current_chunk_paragraphs:
+                chunk_str = "\n\n".join(current_chunk_paragraphs).strip()
+                if chunk_str:
+                    chunks.append(chunk_str)
+                current_chunk_paragraphs = [current_chunk_paragraphs[-1]] if current_chunk_paragraphs else []
+                current_length = sum(len(p) for p in current_chunk_paragraphs)
+
+            current_chunk_paragraphs.append(para)
+            current_length += para_len + 2
+
+    if current_chunk_paragraphs:
+        final_chunk = "\n\n".join(current_chunk_paragraphs).strip()
+        if final_chunk and (not chunks or final_chunk != chunks[-1]):
+            chunks.append(final_chunk)
+
     return chunks
+
 
 
 
