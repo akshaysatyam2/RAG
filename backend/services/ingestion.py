@@ -11,7 +11,10 @@ from backend.config import settings
 from backend.services.llm import generate_context_summary, extract_entities_and_relations
 from backend.services.embeddings import get_dense_embeddings_batch, tokenize_for_sparse, compute_sparse_vector
 
+import uuid
+
 logger = logging.getLogger(__name__)
+
 
 
 def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
@@ -167,8 +170,9 @@ async def build_contextual_chunks(
                 idx = int((i / total_chunks) * total_pages)
                 page_num = pages_metadata[min(idx, total_pages-1)].get("page_number", 1)
         
+        chunk_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{doc_id}_chunk_{i}"))
         chunk_data = {
-            "id": f"{doc_id}_chunk_{i}",
+            "id": chunk_uuid,
             "text": original_text,
             "contextualized_text": ctx_text,
             "dense_vector": embedding,
@@ -177,6 +181,8 @@ async def build_contextual_chunks(
                 "document_id": doc_id,
                 "chunk_index": i,
                 "page_number": page_num,
+                "text": original_text,
+                "contextualized_text": ctx_text,
             },
             "triples": triples
         }

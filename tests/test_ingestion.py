@@ -75,7 +75,8 @@ async def test_build_contextual_chunks():
         )
         
         assert len(chunks) == 1
-        assert chunks[0]["id"] == "doc_123_chunk_0"
+        import uuid
+        assert chunks[0]["id"] == str(uuid.uuid5(uuid.NAMESPACE_DNS, "doc_123_chunk_0"))
         assert chunks[0]["text"] == raw_text
         assert "Document summary text" in chunks[0]["contextualized_text"]
         assert chunks[0]["dense_vector"] == [0.1] * 384
