@@ -9,13 +9,14 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Initialize Qdrant client - local file-backed storage or in-memory fallback if locked/testing
+# Use local disk storage in production and fall back to in-memory during tests
+# or when the Werkzeug reloader parent process would otherwise grab the lock.
 import os
 import sys
 
 qdrant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "qdrant"))
 
-# Avoid locking disk storage in the Werkzeug reloader parent watcher process
+# Don't let the Werkzeug reloader parent process lock the Qdrant directory
 is_reloader_parent = (os.environ.get("WERKZEUG_RUN_MAIN") is None) and any(x in sys.argv[0].lower() for x in ["main.py", "flask"])
 
 if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") or is_reloader_parent:
@@ -37,7 +38,7 @@ DENSE_DIMENSION = 384
 
 async def is_qdrant_available() -> bool:
     """
-    Check if the Qdrant client can connect to the database.
+    Quick connectivity check — returns False if the Qdrant client can't list collections.
     """
     try:
         await client.get_collections()
@@ -49,7 +50,9 @@ async def is_qdrant_available() -> bool:
 
 async def initialize_collection():
     """
-    Creates the collection with dense+sparse vector config if it doesn't exist.
+    Creates the Qdrant collection with separate dense and sparse vector configs.
+    Also creates a keyword payload index on document_id for efficient per-doc filtering.
+    Skips creation if the collection already exists.
     """
     try:
         collections_response = await client.get_collections()
@@ -87,14 +90,9 @@ async def initialize_collection():
 
 async def upsert_chunks(doc_id: str, chunks: List[Dict[str, Any]]):
     """
-    Batch upsert chunks with metadata to Qdrant.
-    chunks should be a list of dictionaries, each containing:
-    - 'id': optional chunk id, else generated
-    - 'text': chunk text content
-    - 'contextualized_text': text prepended with summary context
-    - 'dense_vector': List[float]
-    - 'sparse_vector': Dict with 'indices' and 'values'
-    - 'metadata': Dictionary of metadata to store
+    Batch-upserts chunks into Qdrant with their dense and sparse vectors.
+    Each chunk dict needs: id, text, contextualized_text, dense_vector, sparse_vector, metadata.
+    Writes in batches of 100 to stay within Qdrant payload limits.
     """
     if not chunks:
         return
@@ -102,13 +100,13 @@ async def upsert_chunks(doc_id: str, chunks: List[Dict[str, Any]]):
     points = []
     for chunk in chunks:
         raw_id = chunk.get("id") or str(uuid.uuid4())
-        # Ensure point_id is a valid UUID string
+        # Validate or derive a UUID for the point ID
         try:
             point_id = str(uuid.UUID(str(raw_id)))
         except ValueError:
             point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_id)))
         
-        # Build payload ensuring document_id, text, and contextualized_text are included
+        # Build a flat payload that always includes document_id, text, and contextualized_text
         payload = dict(chunk.get("metadata", {}))
         payload["document_id"] = doc_id
         if "text" not in payload and "text" in chunk:
@@ -136,7 +134,7 @@ async def upsert_chunks(doc_id: str, chunks: List[Dict[str, Any]]):
         )
         
     try:
-        # Batch upsert
+        # Write in batches to avoid hitting Qdrant's per-request size limits
         batch_size = 100
         for i in range(0, len(points), batch_size):
             batch = points[i:i + batch_size]
@@ -152,7 +150,8 @@ async def upsert_chunks(doc_id: str, chunks: List[Dict[str, Any]]):
 
 async def search_dense(query_vector: List[float], top_k: int, doc_filter: Optional[str] = None) -> List[models.ScoredPoint]:
     """
-    Search using dense vector.
+    ANN search over dense (sentence-transformer) vectors.
+    Optionally scoped to a single document via document_id filter.
     """
     filter_params = None
     if doc_filter:
@@ -182,7 +181,8 @@ async def search_dense(query_vector: List[float], top_k: int, doc_filter: Option
 
 async def search_sparse(sparse_vector: Dict[str, Any], top_k: int, doc_filter: Optional[str] = None) -> List[models.ScoredPoint]:
     """
-    Search using sparse vector.
+    Sparse keyword search using the BM25-derived token feature vector.
+    Optionally scoped to a single document via document_id filter.
     """
     filter_params = None
     if doc_filter:
@@ -215,7 +215,7 @@ async def search_sparse(sparse_vector: Dict[str, Any], top_k: int, doc_filter: O
 
 async def delete_by_document(doc_id: str):
     """
-    Remove all vectors for a specific document.
+    Deletes all vector points associated with a given document_id.
     """
     try:
         await client.delete(
@@ -239,7 +239,7 @@ async def delete_by_document(doc_id: str):
 
 async def get_collection_info() -> Dict[str, Any]:
     """
-    Get collection stats.
+    Returns status and point counts for the Qdrant collection.
     """
     try:
         collection_info = await client.get_collection(collection_name=COLLECTION_NAME)

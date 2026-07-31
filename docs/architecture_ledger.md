@@ -17,9 +17,9 @@ responses from uploaded PDF and image documents.
 │  │ Chat View│  │ Doc Manager│  │Theme Toggle│  │ Context Slider   │ │
 │  └──────────┘  └────────────┘  └───────────┘  └──────────────────┘ │
 └───────────────────────────┬──────────────────────────────────────────┘
-                            │ REST / WebSocket
+                            │ REST
 ┌───────────────────────────▼──────────────────────────────────────────┐
-│                     FastAPI Application Server                       │
+│                     Flask Application Server                         │
 │  ┌──────────┐  ┌──────────────┐  ┌────────────┐  ┌──────────────┐  │
 │  │ /api/docs│  │ /api/chat    │  │ /api/ingest│  │ /api/status  │  │
 │  └──────────┘  └──────────────┘  └────────────┘  └──────────────┘  │
@@ -74,20 +74,21 @@ responses from uploaded PDF and image documents.
 
 ## Technology Stack
 
-| Layer            | Technology                     | Justification                              |
+| Layer            | Technology                     | Notes                                      |
 |------------------|--------------------------------|--------------------------------------------|
-| API Server       | FastAPI + Uvicorn              | Async-native, OpenAPI docs, type safety    |
-| Task Queue       | Celery + Redis                 | Battle-tested async job processing         |
-| Vector Store     | Qdrant                         | Native dense+sparse, filtering, local mode |
-| Graph Database   | Neo4j                          | Mature graph DB with Cypher query language  |
-| Metadata Store   | SQLite                         | Zero-config, file-based, sufficient scale  |
-| LLM Integration  | OpenAI-compatible (configurable)| Provider-agnostic via base URL override   |
-| Embeddings       | sentence-transformers (local)  | No API dependency, fast local inference    |
-| Cross-Encoder    | cross-encoder/ms-marco (local) | High-precision passage re-ranking          |
-| PDF Parsing      | PyMuPDF (fitz)                 | Fast, reliable PDF text/image extraction   |
-| OCR              | pytesseract                    | Robust image-to-text for scanned docs      |
-| Frontend         | Vanilla HTML/CSS/JS            | Zero build step, maximum control           |
-| Testing          | pytest + playwright            | Comprehensive backend + UI validation      |
+| API Server       | Flask + Flask-CORS             | Sync server with ThreadPoolExecutor for async tasks |
+| Task Queue       | Celery + Redis                 | Falls back to ThreadPoolExecutor if Redis is absent |
+| Vector Store     | Qdrant                         | Local file-backed; in-memory fallback in tests |
+| Graph Store      | SQLite (local) / Neo4j (opt.)  | SQLite by default; Neo4j supported via env config |
+| Metadata Store   | SQLite (aiosqlite)             | Stores doc records, chunk counts, ingestion progress |
+| LLM Integration  | OpenAI-compatible (via env)    | Works with Ollama, LMStudio, or any OAI-compatible API |
+| Embeddings       | all-MiniLM-L6-v2 (local)      | 384-dim dense vectors; deterministic fallback if absent |
+| Cross-Encoder    | ms-marco-MiniLM-L-6-v2 (local)| Passage re-ranking; falls back to token overlap scoring |
+| Sparse Retrieval | BM25 + MD5 feature hashing     | Token-frequency vectors stored in Qdrant sparse index |
+| PDF Parsing      | PyMuPDF (fitz)                 | Tesseract OCR fallback for scanned/image-only pages |
+| OCR              | pytesseract + Pillow           | Used for image uploads and scanned PDF pages |
+| Frontend         | Vanilla HTML/CSS/JS            | Single-page app served directly by Flask |
+| Testing          | pytest + pytest-asyncio        | Full backend coverage; standalone integration tests |
 
 ## Directory Structure
 
@@ -104,27 +105,23 @@ RAG/
 ├── uploads/                      # Raw uploaded documents
 ├── backend/
 │   ├── __init__.py
-│   ├── main.py                   # FastAPI application entry
-│   ├── config.py                 # Environment and settings
-│   ├── database.py               # SQLite connection and schema
+│   ├── main.py                   # Flask app entry point, all route handlers
+│   ├── config.py                 # Env-based settings via dataclasses
+│   ├── database.py               # SQLite schema + async CRUD (aiosqlite)
 │   ├── models.py                 # Pydantic request/response schemas
-│   ├── routes/
-│   │   ├── __init__.py
-│   │   ├── documents.py          # Upload, list, delete endpoints
-│   │   ├── chat.py               # Query and retrieval endpoint
-│   │   └── status.py             # Ingestion progress endpoint
+│   ├── routes/                   # (reserved for future route extraction)
 │   ├── services/
 │   │   ├── __init__.py
-│   │   ├── ingestion.py          # Document parsing and chunking
-│   │   ├── embeddings.py         # Dense + sparse embedding generation
-│   │   ├── graph.py              # Neo4j operations
-│   │   ├── vector_store.py       # Qdrant operations
-│   │   ├── retrieval.py          # Hybrid search + RRF + graph expansion
-│   │   ├── reranker.py           # Cross-encoder re-ranking
-│   │   └── llm.py                # LLM client for generation
+│   │   ├── ingestion.py          # PDF/image parsing, contextual chunking
+│   │   ├── embeddings.py         # Dense + sparse vector generation
+│   │   ├── graph.py              # SQLite graph store + optional Neo4j routing
+│   │   ├── vector_store.py       # Qdrant collection management and search
+│   │   ├── retrieval.py          # Hybrid search, RRF fusion, graph expansion
+│   │   ├── reranker.py           # Cross-encoder re-ranking with heuristic fallback
+│   │   └── llm.py                # LLM client, offline heuristic fallbacks
 │   └── workers/
 │       ├── __init__.py
-│       └── tasks.py              # Celery task definitions
+│       └── tasks.py              # Celery task for async document ingestion
 ├── frontend/
 │   ├── index.html                # Single-page application shell
 │   ├── css/
@@ -191,6 +188,9 @@ CHUNK_OVERLAP=64
 
 ## Change Log
 
-| Date       | Change                                         | Files Affected       |
-|------------|-------------------------------------------------|----------------------|
-| 2026-07-18 | Initial architecture specification              | docs/architecture_ledger.md |
+| Date       | Change                                                  | Files Affected                        |
+|------------|---------------------------------------------------------|---------------------------------------|
+| 2026-07-18 | Initial architecture specification                      | docs/architecture_ledger.md           |
+| 2026-07-31 | Codebase humanization: rewrote all docstrings/comments  | backend/services/*.py                 |
+| 2026-07-31 | Fixed API server layer: Flask (not FastAPI)             | docs/architecture_ledger.md           |
+| 2026-07-31 | Corrected tech stack: SQLite as default graph store     | docs/architecture_ledger.md           |

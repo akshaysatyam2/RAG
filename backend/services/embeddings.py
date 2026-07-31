@@ -11,18 +11,19 @@ from rank_bm25 import BM25Okapi
 
 from backend.config import settings
 
-# Thread-safe lazy loading of the dense model
+# Lazy-load the dense model once and reuse it across requests
 _dense_model = None
 _model_lock = threading.Lock()
 
 
 def get_deterministic_dummy_embedding(text: str) -> List[float]:
     """
-    Generate a deterministic vector of length 384 using a hash of the text.
-    Acts as a fail-safe fallback when sentence-transformers is not installed.
+    Generates a reproducible 384-dim vector from a SHA-256 hash of the text.
+    Used as a fallback when sentence-transformers isn't installed or fails to load.
+    Same text always produces the same vector, so tests remain deterministic.
     """
     import hashlib
-    # Deterministic seed using SHA-256 hash of text
+    # Seed numpy from the first 4 bytes of the SHA-256 hash
     h = hashlib.sha256(text.encode('utf-8')).digest()
     np.random.seed(int.from_bytes(h[:4], 'big'))
     vec = np.random.randn(384)
@@ -49,7 +50,8 @@ def _get_dense_model():
 
 def get_dense_embedding(text: str) -> List[float]:
     """
-    Get the dense embedding for a single text.
+    Returns a dense embedding vector for a single text string.
+    Falls back to the deterministic dummy if the model isn't available.
     """
     model = _get_dense_model()
     if model is None or model == "dummy":
@@ -64,7 +66,8 @@ def get_dense_embedding(text: str) -> List[float]:
 
 def get_dense_embeddings_batch(texts: List[str]) -> List[List[float]]:
     """
-    Get dense embeddings for a batch of texts.
+    Encodes a batch of texts in one forward pass for efficiency.
+    Falls back to per-text dummy embeddings if the model fails.
     """
     if not texts:
         return []
@@ -83,8 +86,8 @@ def get_dense_embeddings_batch(texts: List[str]) -> List[List[float]]:
 
 def tokenize_for_sparse(text: str) -> List[str]:
     """
-    Tokenizes text for BM25 / sparse vector creation.
-    Lowercases, removes punctuation, and splits by whitespace.
+    Simple tokenizer for BM25 and sparse vector construction.
+    Lowercases the input, strips punctuation, and splits on whitespace.
     """
     text = text.lower()
     # Remove punctuation
@@ -96,9 +99,9 @@ def tokenize_for_sparse(text: str) -> List[str]:
 
 def compute_sparse_vector(text: str, corpus_tokens: Optional[List[List[str]]] = None) -> Dict[str, Any]:
     """
-    Computes a sparse vector representation for the text using deterministic token feature hashing.
-    Ensures identical tokens map to the exact same index during document indexing and query retrieval.
-    Returns a dict with 'indices' (list of integers) and 'values' (list of floats).
+    Builds a sparse vector using MD5-based feature hashing over token frequencies.
+    The same token always maps to the same index, so indexing and querying stay consistent.
+    Returns {'indices': [...], 'values': [...]} compatible with Qdrant's sparse vector format.
     """
     tokens = tokenize_for_sparse(text)
     if not tokens:

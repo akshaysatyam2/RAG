@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
     """
-    Parse a PDF file and return a list of dictionaries with page numbers and text using PyMuPDF and Tesseract OCR fallback.
+    Extracts text from each page of a PDF using PyMuPDF.
+    Falls back to Tesseract OCR for pages that are scanned or image-only.
+    Returns a list of {page_number, text} dicts.
     """
     pages = []
     try:
@@ -27,7 +29,7 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
         for i, page in enumerate(doc):
             text = page.get_text("text")
             if not text or len(text.strip()) < 10:
-                # OCR fallback for scanned PDF pages or vector text graphics
+                # Page has no extractable text — try OCR
                 try:
                     pix = page.get_pixmap()
                     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
@@ -53,7 +55,7 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
 
 def parse_image(file_path: str) -> str:
     """
-    Extract text from an image using pytesseract.
+    Runs Tesseract OCR on an image file and returns the extracted text.
     """
     try:
         img = Image.open(file_path)
@@ -66,9 +68,9 @@ def parse_image(file_path: str) -> str:
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     """
-    Structural & Semantic Chunker:
-    Splits text along section headers, paragraph boundaries (\n\n), and sentence endings (. ! ?).
-    Ensures no chunk starts or ends with partial/truncated words or broken phrases.
+    Splits text into chunks that respect natural boundaries — paragraphs, section headers,
+    and sentence endings — rather than cutting at arbitrary character counts.
+    Avoids chunks that start or end mid-sentence.
     """
     if not text or not text.strip():
         return []
@@ -76,7 +78,7 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     text = text.strip()
     import re
 
-    # Split into paragraphs by double newlines or section headers
+    # Split at paragraph boundaries and numbered/capitalized section headers
     raw_paragraphs = re.split(r'\n\s*\n|\n(?=[0-9]+\.|\b[A-Z][A-Za-z0-9\s]{2,}:)', text)
     paragraphs = [p.strip() for p in raw_paragraphs if p and p.strip()]
 
@@ -87,7 +89,7 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     for para in paragraphs:
         para_len = len(para)
         
-        # If single paragraph is larger than chunk_size, split by sentences
+        # Paragraph too large for one chunk — split it by sentence
         if para_len > chunk_size:
             sentences = re.split(r'(?<=[.!?])\s+', para)
             for sent in sentences:
@@ -131,13 +133,13 @@ async def build_contextual_chunks(
     progress_callback: Optional[Callable[[str, int, int, str], Awaitable[None]]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Full pipeline for contextual chunking.
-    a. Generate document summary via LLM
-    b. Chunk the text
-    c. Prepend summary context to each chunk
-    d. Generate dense embeddings for each chunk
-    e. Extract entity-relation triples from chunks
-    f. Return structured chunks ready for storage
+    Runs the full ingestion pipeline for a single document:
+      1. Generate a document-level summary via LLM
+      2. Split raw text into chunks
+      3. Prepend the summary to each chunk for contextual grounding
+      4. Generate dense embeddings (batched) and sparse token vectors
+      5. Extract entity-relation triples from each raw chunk in parallel
+      6. Return fully structured chunk dicts ready to be stored
     """
     
     async def report_progress(phase: str, step: int, total: int, msg: str):
@@ -156,13 +158,12 @@ async def build_contextual_chunks(
     await report_progress("Contextualization", 3, 5, "Prepending context to chunks...")
     contextualized_texts = []
     for chunk in raw_chunks:
-        # Prepend summary to provide global context
         ctx_text = f"Document Summary: {doc_summary}\n\nChunk Content:\n{chunk}"
         contextualized_texts.append(ctx_text)
         
-    # 4. Dense Embeddings
+    # 4. Generate dense vector representations for the chunks
     await report_progress("Embedding", 4, 5, "Generating dense embeddings...")
-    # Process in batches to avoid OOM
+    # Batch to avoid hitting memory limits with large documents
     dense_embeddings = []
     batch_size = 32
     for i in range(0, len(contextualized_texts), batch_size):
@@ -192,7 +193,7 @@ async def build_contextual_chunks(
         triples = triples_by_index.get(i, [])
         sparse_vec = compute_sparse_vector(ctx_text, corpus_tokens)
         
-        # Meta info
+        # Map chunk index to approximate page number
         page_num = 1
         if pages_metadata:
             total_chunks = len(raw_chunks)

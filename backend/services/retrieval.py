@@ -19,8 +19,9 @@ def reciprocal_rank_fusion(
     k: int = 60
 ) -> List[Dict[str, Any]]:
     """
-    RRF implementation: score = sum(1/(k + rank_i))
-    Returns merged ranked list of dictionaries.
+    Merges dense and sparse result lists using Reciprocal Rank Fusion.
+    Score formula: sum(1 / (k + rank_i)) over each result list.
+    Chunks appearing in both lists get a score boost from both ranks.
     """
     scores: Dict[str, float] = {}
     payloads: Dict[str, Any] = {}
@@ -57,8 +58,9 @@ def reciprocal_rank_fusion(
 
 def expand_query_terms(query: str) -> str:
     """
-    Expands query terms with domain synonyms (e.g. college -> education, university, degree)
-    to boost hybrid retrieval recall for conceptual queries.
+    Appends domain synonyms to the query to improve recall for conceptual searches.
+    For example, "where did he go to college" gets expanded with "education, university, degree"
+    so sparse retrieval can pick up relevant chunks that use different wording.
     """
     q_lower = query.lower()
     expansions = []
@@ -83,7 +85,9 @@ def expand_query_terms(query: str) -> str:
 
 async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     """
-    Runs dense+sparse in parallel, fuses with RRF.
+    Runs dense ANN search and sparse keyword search in parallel, then fuses
+    the results using RRF. Orphaned chunks from deleted documents are filtered out.
+    Returns up to top_k results ranked by combined RRF score.
     """
     from backend.services.reranker import normalize_query_text
     norm_query = normalize_query_text(query)
@@ -104,7 +108,7 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Hybrid search failed to retrieve results from Qdrant: {e}")
 
-    # Filter out points from deleted or orphan documents not in SQLite
+    # Filter out chunks from documents that no longer exist in SQLite
     try:
         from backend.database import list_documents
         active_docs = await list_documents()
@@ -132,8 +136,9 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
 
 async def expand_with_graph(pivot_chunks: List[Dict[str, Any]], max_hops: int = 2) -> List[Dict[str, Any]]:
     """
-    Graph traversal from pivot entities.
-    Extracts entities from the top chunks to use as pivots.
+    Extracts entities from the top retrieved chunks and uses them as
+    starting nodes for a graph traversal. Returns connected context paths
+    from up to max_hops away in the knowledge graph.
     """
     if not pivot_chunks:
         return []
@@ -166,8 +171,10 @@ async def expand_with_graph(pivot_chunks: List[Dict[str, Any]], max_hops: int = 
 
 async def full_retrieval_pipeline(query: str, top_k: int = 20) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Executes hybrid search + graph expansion.
-    Returns: (hybrid_chunks, graph_context)
+    Orchestrates the full two-stage retrieval:
+      Stage 1: Hybrid vector search (dense + sparse, fused with RRF)
+      Stage 2: Graph expansion from the top-5 chunks as entity pivots
+    Returns (hybrid_chunks, graph_context) for downstream re-ranking.
     """
     hybrid_chunks = []
     graph_context = []
@@ -178,7 +185,7 @@ async def full_retrieval_pipeline(query: str, top_k: int = 20) -> Tuple[List[Dic
     except Exception as e:
         logger.warning(f"Failed in full_retrieval_pipeline (hybrid search): {e}")
     
-    # 2. Graph Expansion (using top 5 chunks as pivots to limit scope)
+    # Use only the top 5 chunks as pivots to keep graph traversal focused
     try:
         pivot_chunks = hybrid_chunks[:5]
         if pivot_chunks:

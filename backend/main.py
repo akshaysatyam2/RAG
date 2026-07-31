@@ -51,8 +51,9 @@ _executor = ThreadPoolExecutor(max_workers=10)
 
 def run_async(coro):
     """
-    Utility to run an async coroutine synchronously from a synchronous context,
-    safely handling existing event loops (e.g. under pytest-asyncio).
+    Runs an async coroutine synchronously from Flask's sync context.
+    Handles the case where a running event loop already exists (e.g. under pytest-asyncio)
+    by spawning a new loop in a separate thread.
     """
     try:
         loop = asyncio.get_running_loop()
@@ -76,7 +77,7 @@ def run_async(coro):
 # Global Exception Handler
 @app.errorhandler(Exception)
 def handle_exception(e):
-    app.logger.error("Unhandled exception occurred during request:", exc_info=e)
+    app.logger.error("Unhandled exception:", exc_info=e)
     return jsonify({"detail": str(e)}), 500
 
 
@@ -126,14 +127,14 @@ def upload_document():
         file_size=file_size
     ))
     
-    # Fast check Redis reachability before attempting Celery delay to avoid 15s Kombu reconnect timeout
+    # Check Redis before calling Celery to skip the 15s Kombu reconnect delay
     try:
         import redis
         r = redis.Redis.from_url(settings.redis.url, socket_connect_timeout=0.2)
         r.ping()
         ingest_document.delay(doc_id, str(file_path), ext.lstrip('.'))
     except Exception as e:
-        app.logger.info(f"Celery/Redis not running ({e}). Executing ingestion immediately in thread pool.")
+        app.logger.info(f"Celery/Redis not running ({e}). Running ingestion in thread pool.")
         from backend.workers.tasks import run_ingestion
         _executor.submit(lambda: run_async(run_ingestion(doc_id, str(file_path), ext.lstrip('.'))))
 
@@ -172,7 +173,7 @@ def get_document_by_id(doc_id):
     return jsonify(resp.model_dump())
 
 
-# Delete Document Endpoint (Cascading Purge)
+# Delete Document (cascading purge across Qdrant, graph store, filesystem, SQLite)
 @app.route("/api/docs/<doc_id>", methods=["DELETE"])
 def delete_document_endpoint(doc_id):
     doc = run_async(get_document(doc_id))
@@ -245,7 +246,7 @@ def chat_endpoint():
         for path in graph_context:
             nodes = path.get("path_nodes", [])
             names = [n.get("name", "").strip() for n in nodes if n.get("name", "").strip()]
-            # Filter out single-word action verbs as head nodes
+            # Skip single-word verbs that end up as noise head nodes from graph extraction
             if len(names) >= 2 and names[0].lower() not in {"architected", "led", "developed", "aug", "built"}:
                 humanized_relation = f"{names[0]} is related to {names[-1]}"
                 expanded_chunks.append({

@@ -12,10 +12,11 @@ from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Fast circuit breaker to prevent repeated timeouts when LLM server is offline
+# Simple circuit breaker: cache LLM availability status to avoid repeated 1.5s
+# connection timeouts on every chunk when the local server is offline.
 _llm_online: Optional[bool] = None
 _llm_last_checked: float = 0.0
-_LLM_CHECK_INTERVAL = 30.0  # seconds to re-test LLM connectivity after failure
+_LLM_CHECK_INTERVAL = 30.0  # seconds between re-checks after a failure
 
 client = AsyncOpenAI(
     base_url=settings.llm.base_url,
@@ -26,8 +27,8 @@ client = AsyncOpenAI(
 
 async def check_llm_availability() -> bool:
     """
-    Checks if the local LLM server is reachable within a tight window.
-    Caches status to avoid per-chunk HTTP connection timeouts when offline.
+    Pings the local LLM server and caches the result for 30 seconds.
+    Avoids cascading connection timeouts per-chunk when the server is down.
     """
     global _llm_online, _llm_last_checked
     now = time.time()
@@ -46,8 +47,9 @@ async def check_llm_availability() -> bool:
 
 def synthesize_concise_summary(top_blocks: List[str], query: str) -> str:
     """
-    Synthesizes verbatim text blocks into a clean, bulleted executive summary.
-    Prioritizes lines that match the specific user query terms.
+    Extracts and scores lines from retrieved context blocks against the query.
+    Returns the top 5 most relevant lines formatted as a bulleted summary.
+    Used when the LLM is offline and we need to generate a response from raw chunks.
     """
     from backend.services.reranker import normalize_query_text, stem_word, STOP_WORDS
     import string
@@ -95,9 +97,10 @@ def synthesize_concise_summary(top_blocks: List[str], query: str) -> str:
 
 def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
     """
-    Fallback completion when local LLM server (Ollama) is offline or unresponsive.
-    Uses possessive normalization, stemming, and paragraph block extraction from prompt context.
-    Synthesizes concise bulleted summary instead of dumping whole verbatim documents.
+    Offline fallback for LLM completions. Extracts context blocks from the
+    prompt, scores paragraphs against the query using stemmed token overlap,
+    and returns a bulleted summary of the most relevant paragraphs.
+    Runs entirely locally — no network calls.
     """
     from backend.services.reranker import normalize_query_text, stem_word, STOP_WORDS
 
@@ -166,8 +169,8 @@ def run_local_heuristic_completion(system_prompt: str, user_prompt: str) -> str:
 
 def run_local_heuristic_entity_extraction(text: str) -> List[Dict[str, Any]]:
     """
-    Fallback regex-based entity extraction when LLM is unreachable.
-    Finds capitalized phrases and links them using simple context rules.
+    Regex fallback for entity extraction when the LLM is unreachable.
+    Finds capitalized noun phrases and heuristically links co-occurring pairs within sentences.
     """
     words = re.findall(r'\b[A-Z][a-zA-Z0-9_]{2,}(?:\s+[A-Z][a-zA-Z0-9_]{2,})*\b', text)
     noise = {"The", "And", "For", "With", "This", "That", "From", "Document", "Summary", "Chunk", "Content"}
@@ -232,7 +235,8 @@ async def generate_completion_raw(system_prompt: str, user_prompt: str, temperat
 
 async def generate_completion(system_prompt: str, user_prompt: str, temperature: Optional[float] = None) -> str:
     """
-    Generate completion with automatic local heuristic fallback if LLM is down.
+    Wrapper around generate_completion_raw that transparently falls back
+    to the local heuristic if the LLM server is down.
     """
     if not await check_llm_availability():
         return run_local_heuristic_completion(system_prompt, user_prompt)
@@ -248,7 +252,8 @@ async def generate_completion(system_prompt: str, user_prompt: str, temperature:
 
 async def generate_context_summary(document_text: str) -> str:
     """
-    Generates a document-level context summary, falling back to heuristics if needed.
+    Generates a high-level document summary used to contextualize chunks at ingestion time.
+    Falls back to the first 3 sentences of the document if the LLM is unavailable.
     """
     max_chars = 15000
     text_to_summarize = document_text[:max_chars]
@@ -276,7 +281,8 @@ async def generate_context_summary(document_text: str) -> str:
 
 async def extract_entities_and_relations(chunk_text: str) -> List[Dict[str, Any]]:
     """
-    Extracts entity-relation triples as structured JSON, falling back to regex if needed.
+    Sends a chunk to the LLM and parses the returned JSON array of entity-relation triples.
+    Falls back to regex-based extraction if the LLM is unreachable or returns malformed JSON.
     """
     if not await check_llm_availability():
         return run_local_heuristic_entity_extraction(chunk_text)

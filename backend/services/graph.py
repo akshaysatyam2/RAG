@@ -5,7 +5,7 @@ from backend.config import settings
 logger = logging.getLogger(__name__)
 
 
-# Mock Neo4j classes to maintain backward compatibility with mock tests
+# Stub Neo4j driver used in tests and when Neo4j isn't running locally
 class DummySession:
     async def __aenter__(self):
         return self
@@ -50,7 +50,8 @@ def get_driver():
 
 def is_driver_mocked(db_driver) -> bool:
     """
-    Detect if the graph driver is mocked (e.g. during unit tests).
+    Returns True if the driver is a real Neo4j driver (not the local stub).
+    Used to decide whether to run Cypher queries or fall back to SQLite.
     """
     from unittest.mock import Mock
     return isinstance(db_driver, Mock) or hasattr(db_driver, 'mock_calls') or "DummyDriver" not in str(type(db_driver))
@@ -58,14 +59,16 @@ def is_driver_mocked(db_driver) -> bool:
 
 async def is_neo4j_available() -> bool:
     """
-    Check if the graph store is available. Always True for SQLite local store.
+    Always returns True when running against the local SQLite graph store.
     """
     return True
 
 
 async def initialize_graph():
     """
-    Initializes local graph store schema (no-op as handled by SQLite database init).
+    Sets up the graph store. When running against a real Neo4j instance,
+    this creates the entity uniqueness constraint and doc_id index.
+    Against SQLite, the schema is handled at database init time.
     """
     db_driver = get_driver()
     if is_driver_mocked(db_driver):
@@ -78,13 +81,13 @@ async def initialize_graph():
             )
         return
 
-    logger.info("Successfully initialized local graph store.")
+    logger.info("Local graph store initialized.")
 
 
 async def insert_entities_and_relations(doc_id: str, triples: List[Dict[str, Any]]):
     """
-    Batch insert nodes+edges tagged with doc_id.
-    Runs on mocked Neo4j if driver is mocked, otherwise defaults to SQLite local database.
+    Batch-inserts entity nodes and relation edges, all tagged with doc_id.
+    Routes to Neo4j Cypher queries if a real driver is active, otherwise writes to SQLite.
     """
     if not triples:
         return
@@ -152,8 +155,9 @@ async def insert_entities_and_relations(doc_id: str, triples: List[Dict[str, Any
 
 async def expand_from_entities(entity_names: List[str], max_hops: int = 2) -> List[Dict[str, Any]]:
     """
-    Graph traversal from pivot entities.
-    Runs on mocked Neo4j if driver is mocked, otherwise defaults to SQLite local database queries.
+    Traverses the graph outward from a set of pivot entities up to max_hops away.
+    Returns all connected nodes and edges found along each path.
+    Routes to Neo4j if a real driver is active, otherwise runs BFS over SQLite graph_triples.
     """
     if not entity_names:
         return []
@@ -177,7 +181,7 @@ async def expand_from_entities(entity_names: List[str], max_hops: int = 2) -> Li
     from backend.database import get_connection
     conn = await get_connection()
     try:
-        # First Hop: find relations connected to the starting entities
+        # Hop 1: pull all triples that directly touch any of the starting entities
         placeholders = ",".join(["?"] * len(entity_names))
         query = f"""
             SELECT head, head_type, relation, tail, tail_type 
@@ -203,7 +207,7 @@ async def expand_from_entities(entity_names: List[str], max_hops: int = 2) -> Li
             connected_entities.add(row["head"])
             connected_entities.add(row["tail"])
             
-        # Second Hop (max_hops=2)
+        # Hop 2: expand again from everything we found in hop 1
         if max_hops > 1 and len(connected_entities) > len(entity_names):
             connected_list = list(connected_entities)
             c_placeholders = ",".join(["?"] * len(connected_list))
@@ -243,7 +247,8 @@ async def expand_from_entities(entity_names: List[str], max_hops: int = 2) -> Li
 
 async def delete_by_document(doc_id: str):
     """
-    Cascade remove all nodes/edges for a document.
+    Removes all graph triples associated with a document.
+    Edges are cleaned up first, then orphaned nodes.
     """
     db_driver = get_driver()
     if is_driver_mocked(db_driver):
@@ -281,12 +286,12 @@ async def delete_by_document(doc_id: str):
 
 async def get_graph_stats() -> Dict[str, Any]:
     """
-    Get node/edge counts.
+    Returns a count of distinct entity nodes and total relation edges in the graph store.
     """
     from backend.database import get_connection
     conn = await get_connection()
     try:
-        # Node count: distinct head + distinct tail
+        # Count distinct entities appearing as either head or tail
         async with conn.execute(
             """SELECT COUNT(DISTINCT entity) AS node_count FROM (
                 SELECT head AS entity FROM graph_triples
