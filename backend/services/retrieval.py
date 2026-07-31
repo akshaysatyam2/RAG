@@ -58,13 +58,45 @@ def reciprocal_rank_fusion(
 
 def expand_query_terms(query: str) -> str:
     """
-    Appends domain synonyms to the query to improve recall for conceptual searches.
-    For example, "where did he go to college" gets expanded with "education, university, degree"
-    so sparse retrieval can pick up relevant chunks that use different wording.
+    Appends domain synonyms and performs fuzzy typo correction to improve search recall.
+    - Corrects common typos (e.g. 'logestic' -> 'logistic', 'regresion' -> 'regression')
+    - Appends domain synonyms (e.g. logistic -> classification, logit, odds, probability)
     """
-    q_lower = query.lower()
+    import difflib
+    import re
+
+    # Common typo dictionary
+    typo_map = {
+        "logestic": "logistic",
+        "logistc": "logistic",
+        "regresion": "regression",
+        "regrssion": "regression",
+        "clasification": "classification",
+        "classifcation": "classification",
+        "embedings": "embeddings",
+        "neurel": "neural",
+        "suport": "support",
+        "vecter": "vector",
+    }
+
+    # Normalize typos
+    words = query.split()
+    corrected_words = []
+    for w in words:
+        w_clean = re.sub(r'[^\w]', '', w.lower())
+        if w_clean in typo_map:
+            corrected_words.append(typo_map[w_clean])
+        else:
+            corrected_words.append(w)
+
+    normalized_query = " ".join(corrected_words)
+    q_lower = normalized_query.lower()
     expansions = []
-    
+
+    # Domain expansions
+    if any(k in q_lower for k in ["logistic", "logit", "odds", "sigmoid"]):
+        expansions.extend(["logistic", "regression", "classification", "logit", "odds", "probability", "sigmoid"])
+
     if any(k in q_lower for k in ["college", "university", "school", "education", "degree", "studies", "academics", "graduat"]):
         expansions.extend(["education", "university", "college", "degree", "bachelor", "master", "school", "cgpa", "academics"])
 
@@ -79,8 +111,8 @@ def expand_query_terms(query: str) -> str:
 
     if expansions:
         unique_exp = list(dict.fromkeys(expansions))
-        return f"{query} {' '.join(unique_exp)}"
-    return query
+        return f"{normalized_query} {' '.join(unique_exp)}"
+    return normalized_query
 
 
 async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
