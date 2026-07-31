@@ -56,15 +56,67 @@ def reciprocal_rank_fusion(
     return merged_results
 
 
+def normalize_and_correct_query(query: str) -> tuple[str, bool]:
+    """
+    Normalizes query string and detects/corrects common typos.
+    Returns (corrected_query_string, was_corrected_bool).
+    """
+    if not query:
+        return "", False
+
+    import re
+
+    typo_map = {
+        "logestic": "logistic",
+        "logistc": "logistic",
+        "regresion": "regression",
+        "regrssion": "regression",
+        "clasification": "classification",
+        "classifcation": "classification",
+        "embedings": "embeddings",
+        "neurel": "neural",
+        "suport": "support",
+        "vecter": "vector",
+        "analisis": "analysis",
+        "hiarchical": "hierarchical",
+    }
+
+    words = query.split()
+    corrected_words = []
+    was_corrected = False
+
+    for w in words:
+        w_clean = re.sub(r'[^\w]', '', w.lower())
+        if w_clean in typo_map:
+            corrected = typo_map[w_clean]
+            # Preserve original capitalization style if title/upper
+            if w.isupper():
+                corrected = corrected.upper()
+            elif w[0].isupper():
+                corrected = corrected.capitalize()
+            corrected_words.append(corrected)
+            was_corrected = True
+        else:
+            corrected_words.append(w)
+
+    corrected_str = " ".join(corrected_words)
+    return corrected_str, was_corrected
+
+
 def expand_query_terms(query: str) -> str:
     """
-    Appends domain synonyms to the query to improve recall for conceptual searches.
-    For example, "where did he go to college" gets expanded with "education, university, degree"
-    so sparse retrieval can pick up relevant chunks that use different wording.
+    Appends domain synonyms and performs fuzzy typo correction to improve search recall.
+    - Corrects common typos (e.g. 'logestic' -> 'logistic', 'regresion' -> 'regression')
+    - Appends domain synonyms (e.g. logistic -> classification, logit, odds, probability)
     """
-    q_lower = query.lower()
+    normalized_query, _ = normalize_and_correct_query(query)
+    q_lower = normalized_query.lower()
     expansions = []
-    
+
+    # Domain expansions
+    if any(k in q_lower for k in ["logistic", "logit", "odds", "sigmoid"]):
+        expansions.extend(["logistic", "regression", "classification", "logit", "odds", "probability", "sigmoid"])
+
     if any(k in q_lower for k in ["college", "university", "school", "education", "degree", "studies", "academics", "graduat"]):
         expansions.extend(["education", "university", "college", "degree", "bachelor", "master", "school", "cgpa", "academics"])
 
@@ -79,8 +131,8 @@ def expand_query_terms(query: str) -> str:
 
     if expansions:
         unique_exp = list(dict.fromkeys(expansions))
-        return f"{query} {' '.join(unique_exp)}"
-    return query
+        return f"{normalized_query} {' '.join(unique_exp)}"
+    return normalized_query
 
 
 async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:

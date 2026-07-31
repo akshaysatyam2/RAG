@@ -17,15 +17,51 @@ logger = logging.getLogger(__name__)
 
 
 
+def detect_page_role(page_num: int, total_pages: int, text: str) -> str:
+    """
+    Classifies a PDF page role: 'TOC', 'INDEX', 'EMPTY', or 'BODY'.
+    TOC and INDEX pages are marked to be excluded from semantic search indexing
+    so that index page listings (e.g. 'logistic regression, 6, 12, 131–137')
+    don't hijack actual content retrieval.
+    """
+    cleaned = text.strip() if text else ""
+    if not cleaned or len(cleaned) < 10:
+        return "EMPTY"
+
+    lines = [l.strip() for l in cleaned.splitlines() if l.strip()]
+    first_500 = cleaned[:500].lower()
+    total_pages = max(total_pages, 1)
+
+    # Table of Contents detection (front-matter)
+    if page_num <= 25 and ("contents" in first_500 or "table of contents" in first_500):
+        return "TOC"
+
+    # Index page detection (back-matter)
+    header = " ".join(lines[:3]).lower()
+    if page_num > total_pages * 0.8 and "index" in header:
+        return "INDEX"
+
+    # Index pattern check: lines ending with page reference numbers/ranges
+    import re
+    index_entry_count = sum(1 for line in lines if re.search(r'[a-zA-Z\s]{3,},\s*\d+(?:\s*,\s*\d+|–\d+)*$', line))
+    if len(lines) > 10 and (index_entry_count / len(lines)) > 0.35:
+        return "INDEX"
+
+    return "BODY"
+
+
 def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
     """
     Extracts text from each page of a PDF using PyMuPDF.
-    Falls back to Tesseract OCR for pages that are scanned or image-only.
-    Returns a list of {page_number, text} dicts.
+    Runs Tesseract OCR on scanned/image-only pages.
+    Tags each page role ('BODY', 'TOC', 'INDEX', 'EMPTY') so TOC/Index pages
+    can be filtered out from semantic vector indexing.
+    Returns list of {page_number, text, role} dicts.
     """
     pages = []
     try:
         doc = fitz.open(file_path)
+        total_pages = len(doc)
         for i, page in enumerate(doc):
             text = page.get_text("text")
             if not text or len(text.strip()) < 10:
@@ -39,18 +75,21 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
                 except Exception as ocr_err:
                     logger.warning(f"OCR fallback failed for page {i+1} of {file_path}: {ocr_err}")
 
-            if text and text.strip():
+            cleaned = text.strip() if text else ""
+            role = detect_page_role(i + 1, total_pages, cleaned)
+
+            # Skip EMPTY pages
+            if role != "EMPTY" and len(cleaned) >= 10:
                 pages.append({
                     "page_number": i + 1,
-                    "text": text.strip()
+                    "text": cleaned,
+                    "role": role
                 })
         doc.close()
     except Exception as e:
         logger.error(f"Error parsing PDF {file_path}: {e}")
         raise
     return pages
-
-
 
 
 def parse_image(file_path: str) -> str:
@@ -66,62 +105,168 @@ def parse_image(file_path: str) -> str:
         raise
 
 
-def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
+def get_adaptive_chunk_config(total_pages: int, total_chars: int) -> Dict[str, int]:
     """
-    Splits text into chunks that respect natural boundaries — paragraphs, section headers,
-    and sentence endings — rather than cutting at arbitrary character counts.
-    Avoids chunks that start or end mid-sentence.
+    Determines document scale and returns adaptive chunk_size and overlap:
+    - Large Book (> 50 pages or > 120k chars): 1800 chars, 200 overlap (chapter/topic scope)
+    - Medium Doc (15-50 pages or 30k-120k chars): 1200 chars, 150 overlap (section scope)
+    - Short Doc (< 15 pages or < 30k chars): 650 chars, 100 overlap (paragraph/page scope)
     """
-    if not text or not text.strip():
+    if total_pages > 50 or total_chars > 120000:
+        return {"chunk_size": 1800, "overlap": 200, "scale": "BOOK"}
+    elif total_pages >= 15 or total_chars >= 30000:
+        return {"chunk_size": 1200, "overlap": 150, "scale": "MEDIUM"}
+    else:
+        return {"chunk_size": 650, "overlap": 100, "scale": "SHORT"}
+
+
+def chunk_text_structure_aware(
+    pages_metadata: List[Dict[str, Any]], 
+    chunk_size: int = 1500, 
+    overlap: int = 200
+) -> List[Dict[str, Any]]:
+    """
+    Document-aware & Structure-aware Hierarchical Chunker.
+    - Filters out 'TOC' and 'INDEX' pages so index listing chunks don't pollute retrieval.
+    - Detects Chapter and Section headers and tracks active breadcrumbs.
+    - Prepends structural breadcrumbs ([Section: Chapter 4: Classification > 4.3 Logistic Regression])
+      to every chunk for rich contextual vector and BM25 indexing.
+    - Cleans hyphenated line-breaks and filters out noise paragraphs.
+    """
+    if not pages_metadata:
         return []
 
-    text = text.strip()
     import re
 
-    # Split at paragraph boundaries and numbered/capitalized section headers
-    raw_paragraphs = re.split(r'\n\s*\n|\n(?=[0-9]+\.|\b[A-Z][A-Za-z0-9\s]{2,}:)', text)
-    paragraphs = [p.strip() for p in raw_paragraphs if p and p.strip()]
+    # Filter out TOC and INDEX pages
+    body_pages = [p for p in pages_metadata if p.get("role", "BODY") == "BODY"]
+    if not body_pages:
+        # Fallback to all pages if role tagging was over-aggressive
+        body_pages = pages_metadata
 
-    chunks = []
-    current_chunk_paragraphs = []
+    chunks_output = []
+    active_chapter = ""
+    active_section = ""
+
+    current_chunk_paras = []
     current_length = 0
+    current_chunk_pages = []
 
-    for para in paragraphs:
-        para_len = len(para)
+    def is_noise_paragraph(p: str) -> bool:
+        p_str = p.strip()
+        if len(p_str) < 15:
+            return True
+        tokens = p_str.split()
+        if tokens and all(re.fullmatch(r'[\d.,\-+%()]+|[A-Za-z]', t) for t in tokens):
+            return True
+        return False
+
+    def emit_chunk():
+        nonlocal current_chunk_paras, current_length, current_chunk_pages, active_chapter, active_section
+        if not current_chunk_paras:
+            return
         
-        # Paragraph too large for one chunk — split it by sentence
-        if para_len > chunk_size:
-            sentences = re.split(r'(?<=[.!?])\s+', para)
-            for sent in sentences:
-                sent = sent.strip()
-                if not sent:
-                    continue
-                if current_length + len(sent) + 1 > chunk_size and current_chunk_paragraphs:
-                    chunk_str = "\n\n".join(current_chunk_paragraphs).strip()
-                    if chunk_str:
-                        chunks.append(chunk_str)
-                    current_chunk_paragraphs = [current_chunk_paragraphs[-1]] if current_chunk_paragraphs else []
-                    current_length = sum(len(p) for p in current_chunk_paragraphs)
-                
-                current_chunk_paragraphs.append(sent)
-                current_length += len(sent) + 1
+        raw_content = "\n\n".join(current_chunk_paras).strip()
+        if not raw_content:
+            return
+
+        # Build breadcrumb context
+        breadcrumbs = []
+        if active_chapter:
+            breadcrumbs.append(active_chapter)
+        if active_section and active_section != active_chapter:
+            breadcrumbs.append(active_section)
+
+        prefix = ""
+        if breadcrumbs:
+            prefix = f"[Section: {' > '.join(breadcrumbs)}]\n\n"
+
+        full_chunk_text = f"{prefix}{raw_content}"
+        primary_page = current_chunk_pages[0] if current_chunk_pages else 1
+
+        chunks_output.append({
+            "text": full_chunk_text,
+            "raw_text": raw_content,
+            "page_number": primary_page,
+            "section_context": " > ".join(breadcrumbs) if breadcrumbs else ""
+        })
+
+        # Overlap retention: keep the last paragraph for overlap context
+        if len(current_chunk_paras) > 1:
+            current_chunk_paras = [current_chunk_paras[-1]]
+            current_length = len(current_chunk_paras[0])
+            current_chunk_pages = [current_chunk_pages[-1]]
         else:
-            if current_length + para_len + 2 > chunk_size and current_chunk_paragraphs:
-                chunk_str = "\n\n".join(current_chunk_paragraphs).strip()
-                if chunk_str:
-                    chunks.append(chunk_str)
-                current_chunk_paragraphs = [current_chunk_paragraphs[-1]] if current_chunk_paragraphs else []
-                current_length = sum(len(p) for p in current_chunk_paragraphs)
+            current_chunk_paras = []
+            current_length = 0
+            current_chunk_pages = []
 
-            current_chunk_paragraphs.append(para)
-            current_length += para_len + 2
+    for pdata in body_pages:
+        pg_num = pdata.get("page_number", 1)
+        pg_text = pdata.get("text", "").strip()
 
-    if current_chunk_paragraphs:
-        final_chunk = "\n\n".join(current_chunk_paragraphs).strip()
-        if final_chunk and (not chunks or final_chunk != chunks[-1]):
-            chunks.append(final_chunk)
+        # Fix hyphenated linebreaks: 'statisti-\ncal' -> 'statistical'
+        pg_text = re.sub(r'(\w)-\n(\w)', r'\1\2', pg_text)
+        # Normalize single newlines to spaces
+        pg_text = re.sub(r'(?<!\n)\n(?!\n)', ' ', pg_text)
 
-    return chunks
+        # Split page into raw paragraphs
+        raw_paras = re.split(r'\n\s*\n|\n(?=[0-9]+\.|\b[A-Z][A-Za-z0-9\s]{2,}:)', pg_text)
+
+        for para in raw_paras:
+            para_str = para.strip()
+            if not para_str or is_noise_paragraph(para_str):
+                continue
+
+            # Header detection
+            # Chapter header match: e.g. "Chapter 4: Classification" or "4 Classification"
+            m_chap = re.match(r'^(?:Chapter\s+(\d+)|(\d+))\s+([A-Z][A-Za-z0-9\s\-\?:,]{2,50})$', para_str)
+            if m_chap:
+                cnum = m_chap.group(1) or m_chap.group(2)
+                active_chapter = f"Chapter {cnum}: {m_chap.group(3).strip()}"
+
+            # Section header match: e.g. "4.3 Logistic Regression" or "4.3.1 The Logistic Model"
+            m_sec = re.match(r'^(\d+\.\d+(?:\.\d+)?)\s+([A-Z][A-Za-z0-9\s\-\?:,]{2,60})$', para_str)
+            if m_sec:
+                active_section = f"{m_sec.group(1)} {m_sec.group(2).strip()}"
+
+            para_len = len(para_str)
+
+            if para_len > chunk_size:
+                # Large paragraph — split by sentence
+                sentences = re.split(r'(?<=[.!?])\s+', para_str)
+                for sent in sentences:
+                    sent_str = sent.strip()
+                    if not sent_str or len(sent_str) < 10:
+                        continue
+                    if current_length + len(sent_str) + 1 > chunk_size:
+                        emit_chunk()
+
+                    current_chunk_paras.append(sent_str)
+                    current_length += len(sent_str) + 1
+                    current_chunk_pages.append(pg_num)
+            else:
+                if current_length + para_len + 2 > chunk_size:
+                    emit_chunk()
+
+                current_chunk_paras.append(para_str)
+                current_length += para_len + 2
+                current_chunk_pages.append(pg_num)
+
+    if current_chunk_paras:
+        emit_chunk()
+
+    return chunks_output
+
+
+def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
+    """
+    Legacy wrapper for string-based chunking.
+    Uses chunk_text_structure_aware internally.
+    """
+    synthetic_page = [{"page_number": 1, "text": text, "role": "BODY"}]
+    structured = chunk_text_structure_aware(synthetic_page, chunk_size, overlap)
+    return [c["text"] for c in structured]
 
 
 
@@ -150,9 +295,25 @@ async def build_contextual_chunks(
     await report_progress("Summary Generation", 1, 5, "Generating document summary...")
     doc_summary = await generate_context_summary(raw_text)
     
-    # 2. Chunking
-    await report_progress("Chunking", 2, 5, "Chunking document text...")
-    raw_chunks = chunk_text(raw_text, settings.ingestion.chunk_size, settings.ingestion.chunk_overlap)
+    # 2. Adaptive Scale Detection & Chunking
+    await report_progress("Chunking", 2, 5, "Running adaptive document-aware chunking...")
+    total_pages = len(pages_metadata) if pages_metadata else 1
+    total_chars = len(raw_text)
+    
+    adaptive_cfg = get_adaptive_chunk_config(total_pages, total_chars)
+    chunk_size = adaptive_cfg["chunk_size"]
+    overlap = adaptive_cfg["overlap"]
+    scale = adaptive_cfg["scale"]
+    
+    logger.info(f"Document {doc_id}: Scale={scale}, pages={total_pages}, chars={total_chars}, chunk_size={chunk_size}")
+
+    if pages_metadata:
+        structured_chunk_objs = chunk_text_structure_aware(pages_metadata, chunk_size, overlap)
+    else:
+        synthetic_pages = [{"page_number": 1, "text": raw_text, "role": "BODY"}]
+        structured_chunk_objs = chunk_text_structure_aware(synthetic_pages, chunk_size, overlap)
+
+    raw_chunks = [c["text"] for c in structured_chunk_objs]
     
     # 3. Contextualization
     await report_progress("Contextualization", 3, 5, "Prepending context to chunks...")
@@ -189,18 +350,13 @@ async def build_contextual_chunks(
     triples_by_index = dict(extraction_results)
     
     structured_chunks = []
-    for i, (original_text, ctx_text, embedding) in enumerate(zip(raw_chunks, contextualized_texts, dense_embeddings)):
+    for i, (chunk_obj, ctx_text, embedding) in enumerate(zip(structured_chunk_objs, contextualized_texts, dense_embeddings)):
+        original_text = chunk_obj["text"]
+        page_num = chunk_obj.get("page_number", 1)
+        section_ctx = chunk_obj.get("section_context", "")
+
         triples = triples_by_index.get(i, [])
         sparse_vec = compute_sparse_vector(ctx_text, corpus_tokens)
-        
-        # Map chunk index to approximate page number
-        page_num = 1
-        if pages_metadata:
-            total_chunks = len(raw_chunks)
-            total_pages = len(pages_metadata)
-            if total_pages > 0 and total_chunks > 0:
-                idx = int((i / total_chunks) * total_pages)
-                page_num = pages_metadata[min(idx, total_pages-1)].get("page_number", 1)
         
         try:
             from backend.database import get_document

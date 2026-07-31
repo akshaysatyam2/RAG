@@ -142,6 +142,15 @@ def compute_smart_overlap_score(query: str, text: str) -> float:
             weight = 2.0 if len(term) > 5 or term[0].isupper() else 1.0
             score += weight
 
+    # Boost chunks that contain explicit section breadcrumb headers matching query terms
+    if "[Section:" in text:
+        section_part = text.split("\n\n")[0].lower() if "\n\n" in text else text.lower()
+        if any(stem_word(t) in section_part for t in meaningful_query_terms):
+            score += 1.5
+
+    # Heavy penalty for index listing entries (e.g. 'logistic regression, 6, 12, 131–137')
+    if re.search(r'[a-zA-Z\s]{3,},\s*\d+(?:\s*,\s*\d+|–\d+){2,}', text):
+        score -= 5.0
 
     max_possible = sum(2.0 if len(t) > 5 or t[0].isupper() else 1.0 for t in meaningful_query_terms)
     normalized_score = score / max(max_possible, 1.0)

@@ -1,6 +1,7 @@
 import os
 import uuid
 import asyncio
+import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, jsonify, send_from_directory
@@ -37,7 +38,7 @@ from backend.services.graph import (
     initialize_graph,
     delete_by_document as graph_delete_by_document
 )
-from backend.services.retrieval import full_retrieval_pipeline
+from backend.services.retrieval import full_retrieval_pipeline, normalize_and_correct_query
 from backend.services.reranker import rerank, filter_by_threshold
 from backend.services.llm import generate_completion
 
@@ -211,6 +212,7 @@ def delete_document_endpoint(doc_id):
 # Chat Retrieval Pipeline Endpoint
 @app.route("/api/chat", methods=["POST"])
 def chat_endpoint():
+    start_time = time.time()
     try:
         data = request.get_json() or {}
         try:
@@ -218,15 +220,21 @@ def chat_endpoint():
         except ValidationError as e:
             return jsonify({"detail": e.errors()}), 422
             
+        corrected_q, was_corrected = normalize_and_correct_query(req.query)
+        corrected_query_val = corrected_q if was_corrected else None
+
         # Check if Qdrant is available before attempting retrieval
         if not run_async(is_qdrant_available()):
+            elapsed_ms = round((time.time() - start_time) * 1000, 2)
             resp = ChatResponse(
                 answer=(
                     "Error: The Qdrant vector database is unreachable at localhost:6333. "
                     "Please ensure Qdrant is running so that the system can query your documents."
                 ),
                 sources=[],
-                retrieval_metadata={"status": "Qdrant connection error"}
+                retrieval_metadata={"status": "Qdrant connection error"},
+                processing_time_ms=elapsed_ms,
+                corrected_query=corrected_query_val
             )
             return jsonify(resp.model_dump())
 
@@ -267,10 +275,13 @@ def chat_endpoint():
             else:
                 answer = "No matching information was found in the uploaded documents for your query. I don't have enough information to answer that question."
             
+            elapsed_ms = round((time.time() - start_time) * 1000, 2)
             resp = ChatResponse(
                 answer=answer,
                 sources=[],
-                retrieval_metadata={"status": "No context retrieved"}
+                retrieval_metadata={"status": "No context retrieved"},
+                processing_time_ms=elapsed_ms,
+                corrected_query=corrected_query_val
             )
             return jsonify(resp.model_dump())
             
@@ -287,15 +298,15 @@ def chat_endpoint():
 
         if not filtered_chunks:
             answer = "No matching information was found in the uploaded documents for your query. I don't have enough information to answer that question."
+            elapsed_ms = round((time.time() - start_time) * 1000, 2)
             resp = ChatResponse(
                 answer=answer,
                 sources=[],
-                retrieval_metadata={"status": "No relevant context found"}
+                retrieval_metadata={"status": "No relevant context found"},
+                processing_time_ms=elapsed_ms,
+                corrected_query=corrected_query_val
             )
             return jsonify(resp.model_dump())
-
-
-
 
             
         # 5. Build prompt
@@ -344,13 +355,17 @@ def chat_endpoint():
                 "(Ollama or LMStudio) is running locally at http://localhost:11434/v1."
             )
             
+        elapsed_ms = round((time.time() - start_time) * 1000, 2)
         resp = ChatResponse(
             answer=answer,
             sources=sources,
             retrieval_metadata={
                 "retrieved_count": len(hybrid_chunks) + len(graph_context),
-                "filtered_count": len(filtered_chunks)
-            }
+                "filtered_count": len(filtered_chunks),
+                "processing_time_ms": elapsed_ms
+            },
+            processing_time_ms=elapsed_ms,
+            corrected_query=corrected_query_val
         )
         return jsonify(resp.model_dump())
 
@@ -418,5 +433,7 @@ if "pytest" not in sys.modules:
     init_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # use_reloader=False prevents Werkzeug from spawning a second process,
+    # which would compete for the Qdrant local file lock and fall back to in-memory.
+    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
 

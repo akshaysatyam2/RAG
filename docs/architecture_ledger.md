@@ -1,10 +1,12 @@
 # Multimodal GraphRAG — Architecture Ledger
 
+![GraphRAG UI Interface](images/app_screenshot.png)
+
 ## System Overview
 
 A production-grade Retrieval-Augmented Generation system combining dense/sparse hybrid search,
-knowledge graph traversal, and cross-encoder re-ranking to deliver grounded, hallucination-free
-responses from uploaded PDF and image documents.
+adaptive document-scale chunking, hierarchical section breadcrumb context, knowledge graph traversal,
+and cross-encoder re-ranking to deliver grounded, hallucination-free responses from uploaded PDF and image documents.
 
 ---
 

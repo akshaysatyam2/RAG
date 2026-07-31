@@ -16,8 +16,10 @@ import sys
 
 qdrant_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "qdrant"))
 
-# Don't let the Werkzeug reloader parent process lock the Qdrant directory
-is_reloader_parent = (os.environ.get("WERKZEUG_RUN_MAIN") is None) and any(x in sys.argv[0].lower() for x in ["main.py", "flask"])
+# Werkzeug sets WERKZEUG_RUN_MAIN=true only in the child worker process.
+# The reloader parent never sets it — so this is the reliable way to detect
+# the parent and avoid it grabbing the Qdrant file lock.
+is_reloader_parent = os.environ.get("WERKZEUG_RUN_MAIN") is None and os.environ.get("FLASK_RUN_FROM_CLI") == "true"
 
 if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST") or is_reloader_parent:
     client = AsyncQdrantClient(location=":memory:")

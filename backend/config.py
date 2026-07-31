@@ -77,8 +77,8 @@ class RetrievalConfig:
 class IngestionConfig:
     upload_dir: str = field(default_factory=lambda: _env("UPLOAD_DIR", "./uploads"))
     max_upload_size_mb: int = field(default_factory=lambda: _env_int("MAX_UPLOAD_SIZE_MB", 100))
-    chunk_size: int = field(default_factory=lambda: _env_int("CHUNK_SIZE", 512))
-    chunk_overlap: int = field(default_factory=lambda: _env_int("CHUNK_OVERLAP", 64))
+    chunk_size: int = field(default_factory=lambda: _env_int("CHUNK_SIZE", 1500))
+    chunk_overlap: int = field(default_factory=lambda: _env_int("CHUNK_OVERLAP", 200))
 
 
 @dataclass
