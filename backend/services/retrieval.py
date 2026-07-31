@@ -56,16 +56,16 @@ def reciprocal_rank_fusion(
     return merged_results
 
 
-def expand_query_terms(query: str) -> str:
+def normalize_and_correct_query(query: str) -> tuple[str, bool]:
     """
-    Appends domain synonyms and performs fuzzy typo correction to improve search recall.
-    - Corrects common typos (e.g. 'logestic' -> 'logistic', 'regresion' -> 'regression')
-    - Appends domain synonyms (e.g. logistic -> classification, logit, odds, probability)
+    Normalizes query string and detects/corrects common typos.
+    Returns (corrected_query_string, was_corrected_bool).
     """
-    import difflib
+    if not query:
+        return "", False
+
     import re
 
-    # Common typo dictionary
     typo_map = {
         "logestic": "logistic",
         "logistc": "logistic",
@@ -77,19 +77,39 @@ def expand_query_terms(query: str) -> str:
         "neurel": "neural",
         "suport": "support",
         "vecter": "vector",
+        "analisis": "analysis",
+        "hiarchical": "hierarchical",
     }
 
-    # Normalize typos
     words = query.split()
     corrected_words = []
+    was_corrected = False
+
     for w in words:
         w_clean = re.sub(r'[^\w]', '', w.lower())
         if w_clean in typo_map:
-            corrected_words.append(typo_map[w_clean])
+            corrected = typo_map[w_clean]
+            # Preserve original capitalization style if title/upper
+            if w.isupper():
+                corrected = corrected.upper()
+            elif w[0].isupper():
+                corrected = corrected.capitalize()
+            corrected_words.append(corrected)
+            was_corrected = True
         else:
             corrected_words.append(w)
 
-    normalized_query = " ".join(corrected_words)
+    corrected_str = " ".join(corrected_words)
+    return corrected_str, was_corrected
+
+
+def expand_query_terms(query: str) -> str:
+    """
+    Appends domain synonyms and performs fuzzy typo correction to improve search recall.
+    - Corrects common typos (e.g. 'logestic' -> 'logistic', 'regresion' -> 'regression')
+    - Appends domain synonyms (e.g. logistic -> classification, logit, odds, probability)
+    """
+    normalized_query, _ = normalize_and_correct_query(query)
     q_lower = normalized_query.lower()
     expansions = []
 

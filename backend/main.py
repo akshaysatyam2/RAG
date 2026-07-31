@@ -38,7 +38,7 @@ from backend.services.graph import (
     initialize_graph,
     delete_by_document as graph_delete_by_document
 )
-from backend.services.retrieval import full_retrieval_pipeline
+from backend.services.retrieval import full_retrieval_pipeline, normalize_and_correct_query
 from backend.services.reranker import rerank, filter_by_threshold
 from backend.services.llm import generate_completion
 
@@ -220,6 +220,9 @@ def chat_endpoint():
         except ValidationError as e:
             return jsonify({"detail": e.errors()}), 422
             
+        corrected_q, was_corrected = normalize_and_correct_query(req.query)
+        corrected_query_val = corrected_q if was_corrected else None
+
         # Check if Qdrant is available before attempting retrieval
         if not run_async(is_qdrant_available()):
             elapsed_ms = round((time.time() - start_time) * 1000, 2)
@@ -230,7 +233,8 @@ def chat_endpoint():
                 ),
                 sources=[],
                 retrieval_metadata={"status": "Qdrant connection error"},
-                processing_time_ms=elapsed_ms
+                processing_time_ms=elapsed_ms,
+                corrected_query=corrected_query_val
             )
             return jsonify(resp.model_dump())
 
@@ -276,7 +280,8 @@ def chat_endpoint():
                 answer=answer,
                 sources=[],
                 retrieval_metadata={"status": "No context retrieved"},
-                processing_time_ms=elapsed_ms
+                processing_time_ms=elapsed_ms,
+                corrected_query=corrected_query_val
             )
             return jsonify(resp.model_dump())
             
@@ -298,7 +303,8 @@ def chat_endpoint():
                 answer=answer,
                 sources=[],
                 retrieval_metadata={"status": "No relevant context found"},
-                processing_time_ms=elapsed_ms
+                processing_time_ms=elapsed_ms,
+                corrected_query=corrected_query_val
             )
             return jsonify(resp.model_dump())
 
@@ -358,7 +364,8 @@ def chat_endpoint():
                 "filtered_count": len(filtered_chunks),
                 "processing_time_ms": elapsed_ms
             },
-            processing_time_ms=elapsed_ms
+            processing_time_ms=elapsed_ms,
+            corrected_query=corrected_query_val
         )
         return jsonify(resp.model_dump())
 

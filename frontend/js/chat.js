@@ -74,7 +74,7 @@ async function handleQuery(query) {
         
         document.getElementById(typingId)?.remove();
 
-        appendMessage('bot', response.answer, response.sources, response.processing_time_ms);
+        appendMessage('bot', response.answer, response.sources, response.processing_time_ms, response.corrected_query);
         
         chatHistory.push({ role: 'user', content: query });
         chatHistory.push({ role: 'assistant', content: response.answer });
@@ -86,13 +86,22 @@ async function handleQuery(query) {
     }
 }
 
-function appendMessage(role, content, sources = [], latencyMs = 0) {
+function appendMessage(role, content, sources = [], latencyMs = 0, correctedQuery = null) {
     const container = document.getElementById('chat-messages');
     const avatar = role === 'user' 
         ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
         : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
 
     const htmlContent = role === 'bot' && window.marked ? window.marked.parse(content) : escapeHtml(content);
+
+    let correctionHtml = '';
+    if (role === 'bot' && correctedQuery) {
+        correctionHtml = `
+            <div class="query-correction-note" style="margin-bottom: 8px; padding: 6px 12px; background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; border-radius: 4px; font-size: 0.82rem; color: #94a3b8;">
+                💡 Showing results for: <strong style="color: #38bdf8;">${escapeHtml(correctedQuery)}</strong>
+            </div>
+        `;
+    }
 
     let sourcesHtml = '';
     if (sources && sources.length > 0) {
@@ -117,6 +126,7 @@ function appendMessage(role, content, sources = [], latencyMs = 0) {
         <div class="message ${role}">
             <div class="message-avatar">${avatar}</div>
             <div class="message-content">
+                ${correctionHtml}
                 <div class="message-bubble">${htmlContent}</div>
                 ${sourcesHtml}
                 <div class="message-meta">
