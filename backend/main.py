@@ -418,5 +418,7 @@ if "pytest" not in sys.modules:
     init_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # use_reloader=False prevents Werkzeug from spawning a second process,
+    # which would compete for the Qdrant local file lock and fall back to in-memory.
+    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
 
