@@ -21,6 +21,7 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
     """
     Extracts text from each page of a PDF using PyMuPDF.
     Falls back to Tesseract OCR for pages that are scanned or image-only.
+    Skips noise pages (covers, blank pages, figure-only pages) under 80 chars.
     Returns a list of {page_number, text} dicts.
     """
     pages = []
@@ -39,10 +40,12 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
                 except Exception as ocr_err:
                     logger.warning(f"OCR fallback failed for page {i+1} of {file_path}: {ocr_err}")
 
-            if text and text.strip():
+            cleaned = text.strip() if text else ""
+            # Skip near-blank pages: covers, TOC headers, figure-only pages
+            if cleaned and len(cleaned) >= 80:
                 pages.append({
                     "page_number": i + 1,
-                    "text": text.strip()
+                    "text": cleaned
                 })
         doc.close()
     except Exception as e:
@@ -70,17 +73,39 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
     """
     Splits text into chunks that respect natural boundaries — paragraphs, section headers,
     and sentence endings — rather than cutting at arbitrary character counts.
-    Avoids chunks that start or end mid-sentence.
+
+    Pre-processing applied before splitting:
+    - Joins hyphenated line-breaks (e.g. 'statisti-\ncal' -> 'statistical') common in typeset PDFs
+    - Strips junk-only paragraphs (figure numbers, isolated digits, single symbols)
+
+    Chunks carry context overlap from the last paragraph of the previous chunk.
     """
     if not text or not text.strip():
         return []
 
-    text = text.strip()
     import re
+    text = text.strip()
+
+    # Fix hyphenated line-breaks from typeset PDFs: "statisti-\ncal" -> "statistical"
+    text = re.sub(r'(\w)-\n(\w)', r'\1\2', text)
+    # Normalize single newlines inside paragraphs to spaces
+    text = re.sub(r'(?<!\n)\n(?!\n)', ' ', text)
 
     # Split at paragraph boundaries and numbered/capitalized section headers
     raw_paragraphs = re.split(r'\n\s*\n|\n(?=[0-9]+\.|\b[A-Z][A-Za-z0-9\s]{2,}:)', text)
-    paragraphs = [p.strip() for p in raw_paragraphs if p and p.strip()]
+
+    # Filter out noise paragraphs: pure numbers, single words, figure/table labels, short garbage
+    def is_noise(p: str) -> bool:
+        p = p.strip()
+        if len(p) < 20:
+            return True
+        # All tokens are numbers or single characters (axis labels, figure coords)
+        tokens = p.split()
+        if tokens and all(re.fullmatch(r'[\d.,\-+%]+|[A-Za-z]', t) for t in tokens):
+            return True
+        return False
+
+    paragraphs = [p.strip() for p in raw_paragraphs if p and p.strip() and not is_noise(p)]
 
     chunks = []
     current_chunk_paragraphs = []
@@ -88,21 +113,22 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
 
     for para in paragraphs:
         para_len = len(para)
-        
+
         # Paragraph too large for one chunk — split it by sentence
         if para_len > chunk_size:
             sentences = re.split(r'(?<=[.!?])\s+', para)
             for sent in sentences:
                 sent = sent.strip()
-                if not sent:
+                if not sent or len(sent) < 10:
                     continue
                 if current_length + len(sent) + 1 > chunk_size and current_chunk_paragraphs:
                     chunk_str = "\n\n".join(current_chunk_paragraphs).strip()
                     if chunk_str:
                         chunks.append(chunk_str)
+                    # Keep last paragraph as overlap context
                     current_chunk_paragraphs = [current_chunk_paragraphs[-1]] if current_chunk_paragraphs else []
                     current_length = sum(len(p) for p in current_chunk_paragraphs)
-                
+
                 current_chunk_paragraphs.append(sent)
                 current_length += len(sent) + 1
         else:
@@ -110,6 +136,7 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> List[str]:
                 chunk_str = "\n\n".join(current_chunk_paragraphs).strip()
                 if chunk_str:
                     chunks.append(chunk_str)
+                # Keep last paragraph as overlap context
                 current_chunk_paragraphs = [current_chunk_paragraphs[-1]] if current_chunk_paragraphs else []
                 current_length = sum(len(p) for p in current_chunk_paragraphs)
 
