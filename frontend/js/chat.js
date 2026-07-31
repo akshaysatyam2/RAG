@@ -74,7 +74,7 @@ async function handleQuery(query) {
         
         document.getElementById(typingId)?.remove();
 
-        appendMessage('bot', response.answer, response.sources);
+        appendMessage('bot', response.answer, response.sources, response.processing_time_ms);
         
         chatHistory.push({ role: 'user', content: query });
         chatHistory.push({ role: 'assistant', content: response.answer });
@@ -86,7 +86,7 @@ async function handleQuery(query) {
     }
 }
 
-function appendMessage(role, content, sources = []) {
+function appendMessage(role, content, sources = [], latencyMs = 0) {
     const container = document.getElementById('chat-messages');
     const avatar = role === 'user' 
         ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
@@ -109,6 +109,9 @@ function appendMessage(role, content, sources = []) {
     }
 
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const latencyTag = (role === 'bot' && latencyMs) 
+        ? `<span class="latency-tag" style="margin-left: 8px; font-size: 0.75rem; color: #888; font-weight: 500;">⚡ ${latencyMs} ms</span>` 
+        : '';
 
     const msgHtml = `
         <div class="message ${role}">
@@ -118,6 +121,7 @@ function appendMessage(role, content, sources = []) {
                 ${sourcesHtml}
                 <div class="message-meta">
                     <span>${time}</span>
+                    ${latencyTag}
                     ${role === 'bot' ? `<button class="action-btn copy-btn" title="Copy response">Copy</button>` : ''}
                 </div>
             </div>

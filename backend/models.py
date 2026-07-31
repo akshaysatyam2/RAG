@@ -61,6 +61,7 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceChunk]
     retrieval_metadata: dict = Field(default_factory=dict)
+    processing_time_ms: float = 0.0
 
 
 class IngestionPhaseProgress(BaseModel):
