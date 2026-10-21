@@ -6,7 +6,8 @@ from backend.services.retrieval import (
     reciprocal_rank_fusion,
     hybrid_search,
     expand_with_graph,
-    full_retrieval_pipeline
+    full_retrieval_pipeline,
+    normalize_and_correct_query
 )
 
 def test_reciprocal_rank_fusion():
@@ -66,3 +67,24 @@ async def test_full_pipeline(mock_expand, mock_hybrid):
 async def test_empty_retrieval():
     results = await expand_with_graph([])
     assert results == []
+
+def test_normalize_and_correct_query_typos():
+    corrected, was_modified = normalize_and_correct_query("what is logestic regresion")
+    assert was_modified is True
+    assert corrected == "What is logistic regression?"
+
+def test_normalize_and_correct_query_question_formatting():
+    corrected, was_modified = normalize_and_correct_query("where did akshay study in college")
+    assert was_modified is True
+    assert corrected == "Where did akshay study in college?"
+
+def test_normalize_and_correct_query_already_clean():
+    corrected, was_modified = normalize_and_correct_query("What is logistic regression?")
+    assert was_modified is False
+    assert corrected == "What is logistic regression?"
+
+def test_normalize_and_correct_query_fuzzy_matching():
+    corrected, was_modified = normalize_and_correct_query("tell me about artifcial intellegence")
+    assert was_modified is True
+    assert "artificial intelligence" in corrected.lower()
+

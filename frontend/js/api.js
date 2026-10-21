@@ -58,11 +58,11 @@ export class ApiClient {
         return this.request(`/api/docs/${docId}`, { method: 'DELETE' });
     }
 
-    async sendQuery(query, history = [], topK = 5) {
+    async sendQuery(query, history = [], topK = 5, enableCompression = false) {
         return this.request('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, history, top_k: topK })
+            body: JSON.stringify({ query, history, top_k: topK, enable_compression: enableCompression })
         });
     }
 

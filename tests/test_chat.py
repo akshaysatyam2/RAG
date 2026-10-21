@@ -155,4 +155,50 @@ async def test_chat_with_longllmlingua_disabled(test_client, monkeypatch):
         assert data["retrieval_metadata"]["longllmlingua_applied"] is False
 
 
+@pytest.mark.asyncio
+async def test_chat_with_autocorrect_and_formatting(test_client):
+    with patch("backend.main.full_retrieval_pipeline") as mock_retrieval, \
+         patch("backend.main.rerank") as mock_rerank, \
+         patch("backend.main.generate_completion") as mock_gen:
+
+        mock_retrieval.return_value = ([{
+            "id": "1",
+            "payload": {
+                "text": "Logistic regression is a linear model for classification.",
+                "document_id": "doc-1",
+                "document_name": "ml.pdf",
+                "chunk_index": 0
+            }
+        }], [])
+        mock_rerank.return_value = [{
+            "id": "1",
+            "payload": {
+                "text": "Logistic regression is a linear model for classification.",
+                "document_id": "doc-1",
+                "document_name": "ml.pdf",
+                "chunk_index": 0
+            },
+            "rerank_score": 0.95
+        }]
+        mock_gen.return_value = "Logistic regression models categorical outcomes."
+
+        # Pass query with typos and missing question punctuation
+        response = test_client.post("/api/chat", json={"query": "what is logestic regresion"})
+        assert response.status_code == 200
+        data = response.json()
+
+        # Check that corrected_query is returned for UI badge
+        assert data["corrected_query"] == "What is logistic regression?"
+
+        # Verify that retrieval and reranking received the corrected & formatted query
+        mock_retrieval.assert_called_once()
+        retrieval_query_arg = mock_retrieval.call_args[0][0]
+        assert retrieval_query_arg == "What is logistic regression?"
+
+        mock_rerank.assert_called_once()
+        rerank_query_arg = mock_rerank.call_args[0][0]
+        assert rerank_query_arg == "What is logistic regression?"
+
+
+
 

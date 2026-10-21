@@ -58,49 +58,148 @@ def reciprocal_rank_fusion(
 
 def normalize_and_correct_query(query: str) -> tuple[str, bool]:
     """
-    Normalizes query string and detects/corrects common typos.
+    Normalizes query string, auto-corrects typos, and formats questions properly.
+    - Cleans redundant whitespace
+    - Auto-corrects typos using domain dictionary + fuzzy matching (difflib)
+    - Auto-capitalizes the first letter of sentences
+    - Ensures proper question mark punctuation ('?') for interrogative questions
     Returns (corrected_query_string, was_corrected_bool).
     """
-    if not query:
+    if not query or not query.strip():
         return "", False
 
     import re
+    import difflib
 
+    # Common typo dictionary covering ML, RAG, domain, question, and general terms
     typo_map = {
+        # Machine learning & data science
         "logestic": "logistic",
         "logistc": "logistic",
         "regresion": "regression",
         "regrssion": "regression",
         "clasification": "classification",
         "classifcation": "classification",
+        "clasify": "classify",
         "embedings": "embeddings",
+        "embeding": "embedding",
         "neurel": "neural",
+        "neral": "neural",
         "suport": "support",
         "vecter": "vector",
+        "vectrs": "vectors",
         "analisis": "analysis",
         "hiarchical": "hierarchical",
+        "hierarcial": "hierarchical",
+        "artifical": "artificial",
+        "artifcial": "artificial",
+        "intellegence": "intelligence",
+        "inteligence": "intelligence",
+        "algoritm": "algorithm",
+        "algortihm": "algorithm",
+        "retreival": "retrieval",
+        "retrival": "retrieval",
+        "reranker": "reranker",
+        "rerankng": "reranking",
+        "tokenizor": "tokenizer",
+        "tokeniser": "tokenizer",
+        "compreison": "compression",
+        "compresion": "compression",
+        "syntesis": "synthesis",
+        "synthesize": "synthesize",
+        
+        # General question words & common query terms
+        "whaat": "what",
+        "wat": "what",
+        "wht": "what",
+        "wen": "when",
+        "wher": "where",
+        "whch": "which",
+        "wich": "which",
+        "hw": "how",
+        "explian": "explain",
+        "explan": "explain",
+        "sumarize": "summarize",
+        "sumerize": "summarize",
+        "sumary": "summary",
+        "summery": "summary",
+        "documnt": "document",
+        "documnets": "documents",
+        "experiance": "experience",
+        "experence": "experience",
+        "colledge": "college",
+        "collg": "college",
+        "univercity": "university",
+        "universiti": "university",
+        "graduat": "graduate",
+        "edcuation": "education",
+        "educashun": "education",
+        "projets": "projects",
+        "projct": "project",
+        "skils": "skills",
+        "stydy": "study",
+        "studie": "study",
+        "studed": "studied",
     }
 
-    words = query.split()
+    canonical_terms = set(typo_map.values()) | {
+        "machine", "learning", "deep", "transformer", "attention", "architecture",
+        "database", "context", "accuracy", "precision", "recall", "threshold",
+        "document", "education", "project", "experience", "overview", "language",
+        "model", "framework", "knowledge", "graph", "hybrid", "rerank"
+    }
+
+    question_starters = {
+        "what", "who", "where", "when", "why", "how", "which",
+        "can", "could", "is", "are", "do", "does", "did", "would", "will", "whom", "whose"
+    }
+
+    clean_raw = re.sub(r'\s+', ' ', query).strip()
+    words = clean_raw.split()
     corrected_words = []
-    was_corrected = False
 
     for w in words:
-        w_clean = re.sub(r'[^\w]', '', w.lower())
-        if w_clean in typo_map:
-            corrected = typo_map[w_clean]
-            # Preserve original capitalization style if title/upper
-            if w.isupper():
-                corrected = corrected.upper()
-            elif w[0].isupper():
-                corrected = corrected.capitalize()
-            corrected_words.append(corrected)
-            was_corrected = True
+        # Preserve leading/trailing punctuation (e.g. quotes, brackets, question marks)
+        punct_match = re.search(r'([^\w\s]+)$', w)
+        trailing_punct = punct_match.group(1) if punct_match else ""
+        leading_match = re.match(r'^([^\w\s]+)', w)
+        leading_punct = leading_match.group(1) if leading_match else ""
+
+        w_core = re.sub(r'^[^\w\s]+|[^\w\s]+$', '', w)
+        w_lower = w_core.lower()
+
+        replacement = None
+        if w_lower in typo_map:
+            replacement = typo_map[w_lower]
+        elif len(w_lower) >= 5 and w_lower not in canonical_terms and not w_lower.isdigit():
+            matches = difflib.get_close_matches(w_lower, canonical_terms, n=1, cutoff=0.82)
+            if matches:
+                replacement = matches[0]
+
+        if replacement and replacement != w_lower:
+            if w_core.isupper():
+                corrected = replacement.upper()
+            elif w_core and w_core[0].isupper():
+                corrected = replacement.capitalize()
+            else:
+                corrected = replacement
+            corrected_words.append(leading_punct + corrected + trailing_punct)
         else:
             corrected_words.append(w)
 
-    corrected_str = " ".join(corrected_words)
-    return corrected_str, was_corrected
+    result = " ".join(corrected_words).strip()
+
+    # Auto-format: Capitalize first character
+    if result and result[0].islower():
+        result = result[0].upper() + result[1:]
+
+    # Auto-format: Question mark punctuation for questions
+    first_word = re.sub(r'[^\w]', '', result.split()[0]).lower() if result.split() else ""
+    if first_word in question_starters and not result.endswith(("?", ".", "!")):
+        result = result.rstrip(",;:") + "?"
+
+    was_modified = (result != query.strip())
+    return result, was_modified
 
 
 def expand_query_terms(query: str) -> str:

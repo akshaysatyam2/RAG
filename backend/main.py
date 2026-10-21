@@ -223,6 +223,7 @@ def chat_endpoint():
             
         corrected_q, was_corrected = normalize_and_correct_query(req.query)
         corrected_query_val = corrected_q if was_corrected else None
+        effective_query = corrected_q if was_corrected else req.query
 
         # Check if Qdrant is available before attempting retrieval
         if not run_async(is_qdrant_available()):
@@ -241,7 +242,7 @@ def chat_endpoint():
 
         # 1. Retrieve Chunks
         hybrid_chunks, graph_context = run_async(full_retrieval_pipeline(
-            req.query, top_k=settings.retrieval.top_k_retrieval
+            effective_query, top_k=settings.retrieval.top_k_retrieval
         ))
         
         # 2. Package all retrieved payloads for re-ranking
@@ -287,13 +288,13 @@ def chat_endpoint():
             return jsonify(resp.model_dump())
             
         # 3. Score chunks using cross-encoder
-        reranked_chunks = rerank(req.query, expanded_chunks, top_k=req.top_k)
+        reranked_chunks = rerank(effective_query, expanded_chunks, top_k=req.top_k)
         
         # 4. Filter by threshold
         filtered_chunks = filter_by_threshold(reranked_chunks, settings.retrieval.similarity_threshold)
         if not filtered_chunks:
             top_score = reranked_chunks[0].get("rerank_score", 0.0) if reranked_chunks else 0.0
-            is_overview_query = any(k in req.query.lower() for k in ["summarize", "main topics", "overview", "document summary", "what is this document about"])
+            is_overview_query = any(k in effective_query.lower() for k in ["summarize", "main topics", "overview", "document summary", "what is this document about"])
             if top_score >= 0.05 or is_overview_query:
                 filtered_chunks = reranked_chunks[:3]
 
@@ -338,7 +339,7 @@ def chat_endpoint():
         is_comp_enabled = req.enable_compression if req.enable_compression is not None else settings.longllmlingua.enabled
         compression_result = compress_context_with_longllmlingua(
             context_chunks=context_texts,
-            query=req.query,
+            query=effective_query,
             instruction="Synthesize a concise executive summary answering the question directly based only on the context.",
             enabled=is_comp_enabled
         )
@@ -348,7 +349,7 @@ def chat_endpoint():
         if req.history:
             history_str = "Chat History:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in req.history]) + "\n\n"
             
-        user_prompt = f"{history_str}Context:\n{context_str}\n\nQuestion: {req.query}"
+        user_prompt = f"{history_str}Context:\n{context_str}\n\nQuestion: {effective_query}"
         
         # 6. Generate answer
         try:

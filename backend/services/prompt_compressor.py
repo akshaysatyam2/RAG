@@ -209,6 +209,19 @@ def compress_context_with_longllmlingua(
         fallback_res["compression_time_ms"] = round((time.time() - start_time) * 1000, 2)
         return fallback_res
 
+    # CPU guard: Large contexts (>500 tokens) take minutes to compress on CPU and freeze interactive chat.
+    # Seamlessly route large CPU contexts to fast heuristic compression.
+    if settings.longllmlingua.device_map == "cpu" and orig_tokens_est > 500:
+        logger.info(
+            f"Context token count ({orig_tokens_est}) exceeds safe CPU neural compression threshold (500). "
+            f"Using fast heuristic compression to maintain interactive UI response time."
+        )
+        fallback_res = heuristic_compress_context(context_chunks, query, rate=effective_rate)
+        fallback_res["compression_time_ms"] = round((time.time() - start_time) * 1000, 2)
+        fallback_res["applied"] = True
+        fallback_res["fallback"] = False
+        return fallback_res
+
     # 4. Neural LongLLMLingua compression
     try:
         compress_kwargs: Dict[str, Any] = {

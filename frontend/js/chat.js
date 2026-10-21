@@ -76,7 +76,7 @@ async function handleQuery(query) {
 
         appendMessage('bot', response.answer, response.sources, response.processing_time_ms, response.corrected_query, response.compression_ratio);
         
-        chatHistory.push({ role: 'user', content: query });
+        chatHistory.push({ role: 'user', content: response.corrected_query || query });
         chatHistory.push({ role: 'assistant', content: response.answer });
 
     } catch (error) {
