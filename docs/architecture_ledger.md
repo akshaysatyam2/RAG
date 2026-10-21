@@ -62,8 +62,13 @@ and cross-encoder re-ranking to deliver grounded, hallucination-free responses f
 4. Stage 3 — Re-ranking:
    - Cross-encoder scores all expanded chunks against query
    - Top-N chunks selected by relevance score
-5. Stage 4 — Grounded Generation:
-   - LLM generates answer strictly from retrieved context
+5. Stage 4 — LongLLMLingua Prompt Compression:
+   - Question-aware compression via open-source model (`gpt2`, `Qwen/Qwen2.5-0.5B`, `phi-2`)
+   - Reorders context chunks (`reorder_context='sort'`) to eliminate the "lost-in-the-middle" effect
+   - Dynamically allocates token budget to high-density informative blocks
+   - Falls back to heuristic compression if neural compressor is offline
+6. Stage 5 — Grounded Generation:
+   - LLM generates answer strictly from compressed, re-ranked context
    - If context insufficient → explicit "I don't have enough information" response
 
 ## Data Flow — Cascading Document Purge
@@ -84,6 +89,7 @@ and cross-encoder re-ranking to deliver grounded, hallucination-free responses f
 | Graph Store      | SQLite (local) / Neo4j (opt.)  | SQLite by default; Neo4j supported via env config |
 | Metadata Store   | SQLite (aiosqlite)             | Stores doc records, chunk counts, ingestion progress |
 | LLM Integration  | OpenAI-compatible (via env)    | Works with Ollama, LMStudio, or any OAI-compatible API |
+| Prompt Compressor| LongLLMLingua (llmlingua)      | Question-aware compression and context reordering using open-source models |
 | Embeddings       | all-MiniLM-L6-v2 (local)      | 384-dim dense vectors; deterministic fallback if absent |
 | Cross-Encoder    | ms-marco-MiniLM-L-6-v2 (local)| Passage re-ranking; falls back to token overlap scoring |
 | Sparse Retrieval | BM25 + MD5 feature hashing     | Token-frequency vectors stored in Qdrant sparse index |

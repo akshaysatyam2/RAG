@@ -9,10 +9,11 @@ A production-grade Retrieval-Augmented Generation (RAG) system combining **dense
 ## Key Features
 
 - 🎯 **Adaptive Document-Scale Chunking**: Dynamically adjusts target chunk sizes based on document scale (Books: 1800c, Reports: 1200c, Resumes: 650c).
+- 🗜️ **LongLLMLingua Question-Aware Prompt Compression**: Compresses retrieved contexts using open-source language models (default: `gpt2`, configurable to `Qwen/Qwen2.5-0.5B`, `microsoft/phi-2`). Dynamically reorders contexts to mitigate "lost-in-the-middle" degradation and cuts prompt token footprint while preserving essential entities.
 - 🚫 **Front-Matter & Back-Matter Noise Exclusion**: Automatically classifies page roles (`BODY`, `TOC`, `INDEX`). Excludes TOC and Index listing pages from semantic vector indexing so page numbers/index listings never hijack queries.
 - 📌 **Hierarchical Section Breadcrumbs**: Extracts Chapter, Section, and Subsection headers (e.g. `[Section: Chapter 4: Classification > 4.3 Logistic Regression]`) and prepends structural context to every chunk.
 - 🔍 **Query Typo Auto-Correction**: Normalizes user typos (e.g. `logestic` $\rightarrow$ `logistic`) and displays a UI suggestion badge (`💡 Showing results for: "tell me about logistic regression"`).
-- ⚡ **Response Latency Tracking**: Tracks total pipeline processing time in milliseconds and displays an `⚡ XXX ms` badge next to assistant responses.
+- ⚡ **Response Latency & Compression Tracking**: Tracks total pipeline processing time in milliseconds (`⚡ XXX ms`) and compression ratio (`🗜️ 2.1x`) next to assistant responses.
 - 🛠️ **Unified Management CLI (`manage.py`)**: One command (`python manage.py reindex`) to automatically purge and re-chunk all uploaded documents.
 
 ---
@@ -27,6 +28,7 @@ A production-grade Retrieval-Augmented Generation (RAG) system combining **dense
 | **Vector DB** | Qdrant | Local file-backed storage with dense and sparse named vectors |
 | **Graph Store** | SQLite / Neo4j | Local SQLite graph store by default; Neo4j optional via env |
 | **Metadata DB** | SQLite via aiosqlite | Document records, chunk counts, ingestion progress state |
+| **Prompt Compressor** | LongLLMLingua (`llmlingua`) | Question-aware compression and context reordering using open-source models |
 | **Dense Vectors** | `all-MiniLM-L6-v2` | Local 384-dimensional sentence transformer embeddings |
 | **Sparse Vectors**| BM25 + MD5 Hashing | Token-frequency feature vectors stored in Qdrant sparse index |
 | **Re-ranker** | `ms-marco-MiniLM-L-6-v2` | Cross-encoder passage re-ranking model |
