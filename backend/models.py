@@ -63,6 +63,7 @@ class ChatResponse(BaseModel):
     retrieval_metadata: dict = Field(default_factory=dict)
     processing_time_ms: float = 0.0
     corrected_query: Optional[str] = None
+    compression_ratio: Optional[str] = None
 
 
 class IngestionPhaseProgress(BaseModel):

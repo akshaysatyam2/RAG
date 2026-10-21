@@ -40,6 +40,7 @@ from backend.services.graph import (
 )
 from backend.services.retrieval import full_retrieval_pipeline, normalize_and_correct_query
 from backend.services.reranker import rerank, filter_by_threshold
+from backend.services.prompt_compressor import compress_context_with_longllmlingua
 from backend.services.llm import generate_completion
 
 app = Flask(__name__)
@@ -309,7 +310,7 @@ def chat_endpoint():
             return jsonify(resp.model_dump())
 
             
-        # 5. Build prompt
+        # 5. Build prompt & compress context using LongLLMLingua
         context_texts = []
         sources = []
         for i, chunk in enumerate(filtered_chunks):
@@ -326,8 +327,6 @@ def chat_endpoint():
                 )
             )
             
-        context_str = "\n\n".join(context_texts)
-        
         system_prompt = (
             "You are an expert AI assistant. Synthesize a concise, well-structured executive summary "
             "answering the user's question directly based ONLY on the provided context. Use bullet points and clear formatting. "
@@ -335,6 +334,13 @@ def chat_endpoint():
             "If the context does not contain sufficient information, explicitly state that you cannot answer."
         )
 
+        # Compress and optimize context with LongLLMLingua
+        compression_result = compress_context_with_longllmlingua(
+            context_chunks=context_texts,
+            query=req.query,
+            instruction="Synthesize a concise executive summary answering the question directly based only on the context."
+        )
+        context_str = compression_result.get("compressed_context") or "\n\n".join(context_texts)
         
         history_str = ""
         if req.history:
@@ -356,16 +362,26 @@ def chat_endpoint():
             )
             
         elapsed_ms = round((time.time() - start_time) * 1000, 2)
+        compression_ratio_val = compression_result.get("ratio") if compression_result.get("applied") else None
+        retrieval_metadata_dict = {
+            "retrieved_count": len(hybrid_chunks) + len(graph_context),
+            "filtered_count": len(filtered_chunks),
+            "processing_time_ms": elapsed_ms,
+            "longllmlingua_applied": compression_result.get("applied", False),
+            "compression_ratio": compression_result.get("ratio", "1.0x"),
+            "compression_savings": compression_result.get("saving", "0.0%"),
+            "original_tokens": compression_result.get("origin_tokens", 0),
+            "compressed_tokens": compression_result.get("compressed_tokens", 0),
+            "compression_time_ms": compression_result.get("compression_time_ms", 0.0),
+            "compressor_model": compression_result.get("model_name", settings.longllmlingua.model_name),
+        }
         resp = ChatResponse(
             answer=answer,
             sources=sources,
-            retrieval_metadata={
-                "retrieved_count": len(hybrid_chunks) + len(graph_context),
-                "filtered_count": len(filtered_chunks),
-                "processing_time_ms": elapsed_ms
-            },
+            retrieval_metadata=retrieval_metadata_dict,
             processing_time_ms=elapsed_ms,
-            corrected_query=corrected_query_val
+            corrected_query=corrected_query_val,
+            compression_ratio=compression_ratio_val
         )
         return jsonify(resp.model_dump())
 
