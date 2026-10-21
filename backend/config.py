@@ -95,6 +95,7 @@ class LongLLMLinguaConfig:
     device_map: str = field(default_factory=lambda: _env("LONGLLMLINGUA_DEVICE", "cpu"))
     rate: float = field(default_factory=lambda: _env_float("LONGLLMLINGUA_RATE", 0.55))
     target_token: int = field(default_factory=lambda: _env_int("LONGLLMLINGUA_TARGET_TOKEN", -1))
+    rank_method: str = field(default_factory=lambda: _env("LONGLLMLINGUA_RANK_METHOD", "longllmlingua"))
     dynamic_context_compression_ratio: float = field(
         default_factory=lambda: _env_float("LONGLLMLINGUA_DYNAMIC_RATIO", 0.3)
     )
