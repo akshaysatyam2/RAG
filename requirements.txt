@@ -19,6 +19,9 @@ neo4j
 openai
 tenacity
 
+# Prompt Compression (LongLLMLingua)
+llmlingua
+
 # PDF and image processing
 PyMuPDF
 pytesseract

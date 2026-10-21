@@ -31,6 +31,13 @@ def _env_float(key: str, default: float = 0.0) -> float:
         return default
 
 
+def _env_bool(key: str, default: bool = False) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("true", "1", "yes", "on")
+
+
 @dataclass
 class LLMConfig:
     base_url: str = field(default_factory=lambda: _env("LLM_BASE_URL", "http://localhost:11434/v1"))
@@ -82,6 +89,20 @@ class IngestionConfig:
 
 
 @dataclass
+class LongLLMLinguaConfig:
+    enabled: bool = field(default_factory=lambda: _env_bool("ENABLE_LONGLLMLINGUA", True))
+    model_name: str = field(default_factory=lambda: _env("LONGLLMLINGUA_MODEL_NAME", "gpt2"))
+    device_map: str = field(default_factory=lambda: _env("LONGLLMLINGUA_DEVICE", "cpu"))
+    rate: float = field(default_factory=lambda: _env_float("LONGLLMLINGUA_RATE", 0.55))
+    target_token: int = field(default_factory=lambda: _env_int("LONGLLMLINGUA_TARGET_TOKEN", -1))
+    dynamic_context_compression_ratio: float = field(
+        default_factory=lambda: _env_float("LONGLLMLINGUA_DYNAMIC_RATIO", 0.3)
+    )
+    reorder_context: str = field(default_factory=lambda: _env("LONGLLMLINGUA_REORDER_CONTEXT", "sort"))
+    condition_in_question: str = field(default_factory=lambda: _env("LONGLLMLINGUA_CONDITION_IN_QUESTION", "after"))
+
+
+@dataclass
 class DatabaseConfig:
     sqlite_path: str = field(default_factory=lambda: _env("SQLITE_PATH", "./data/metadata.db"))
 
@@ -96,6 +117,7 @@ class Settings:
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     ingestion: IngestionConfig = field(default_factory=IngestionConfig)
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
+    longllmlingua: LongLLMLinguaConfig = field(default_factory=LongLLMLinguaConfig)
 
     def ensure_directories(self):
         Path(self.ingestion.upload_dir).mkdir(parents=True, exist_ok=True)

@@ -41,3 +41,29 @@ def test_config_mutability():
     config.model = "new-model"
     assert config.model == "new-model"
 
+
+def test_longllmlingua_config():
+    settings = Settings()
+    assert settings.longllmlingua.enabled is True
+    assert settings.longllmlingua.model_name == "gpt2"
+    assert settings.longllmlingua.device_map == "cpu"
+    assert settings.longllmlingua.rate == 0.55
+    assert settings.longllmlingua.reorder_context == "sort"
+
+    with patch.dict(os.environ, {
+        "ENABLE_LONGLLMLINGUA": "false",
+        "LONGLLMLINGUA_MODEL_NAME": "Qwen/Qwen2.5-0.5B",
+        "LONGLLMLINGUA_DEVICE": "cuda",
+        "LONGLLMLINGUA_RATE": "0.4",
+        "LONGLLMLINGUA_DYNAMIC_RATIO": "0.25",
+        "LONGLLMLINGUA_REORDER_CONTEXT": "original"
+    }):
+        custom = Settings()
+        assert custom.longllmlingua.enabled is False
+        assert custom.longllmlingua.model_name == "Qwen/Qwen2.5-0.5B"
+        assert custom.longllmlingua.device_map == "cuda"
+        assert custom.longllmlingua.rate == 0.4
+        assert custom.longllmlingua.dynamic_context_compression_ratio == 0.25
+        assert custom.longllmlingua.reorder_context == "original"
+
+
