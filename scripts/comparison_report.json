@@ -1,0 +1,62 @@
+[
+  {
+    "query": "What is logistic regression and when is it preferred over SVM?",
+    "raw_tokens": 0,
+    "compressed_tokens": 0,
+    "ratio": "1.0x",
+    "savings": "0.0%",
+    "compression_time_ms": 0.0,
+    "baseline": {
+      "tokens": 0,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What is logistic regression and when is it preferred over SVM?",
+      "latency_ms": 2558.19,
+      "context_sample": "..."
+    },
+    "longllmlingua": {
+      "tokens": 0,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What is logistic regression and when is it preferred over SVM?",
+      "latency_ms": 0.39,
+      "context_sample": "..."
+    }
+  },
+  {
+    "query": "What university or college did Akshay graduate from?",
+    "raw_tokens": 0,
+    "compressed_tokens": 0,
+    "ratio": "1.0x",
+    "savings": "0.0%",
+    "compression_time_ms": 0.0,
+    "baseline": {
+      "tokens": 0,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What university or college did Akshay graduate from?",
+      "latency_ms": 0.36,
+      "context_sample": "..."
+    },
+    "longllmlingua": {
+      "tokens": 0,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What university or college did Akshay graduate from?",
+      "latency_ms": 0.26,
+      "context_sample": "..."
+    }
+  },
+  {
+    "query": "Explain the bootstrap resampling method.",
+    "raw_tokens": 0,
+    "compressed_tokens": 0,
+    "ratio": "1.0x",
+    "savings": "0.0%",
+    "compression_time_ms": 0.0,
+    "baseline": {
+      "tokens": 0,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: Explain the bootstrap resampling method.",
+      "latency_ms": 0.37,
+      "context_sample": "..."
+    },
+    "longllmlingua": {
+      "tokens": 0,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: Explain the bootstrap resampling method.",
+      "latency_ms": 0.26,
+      "context_sample": "..."
+    }
+  }
+]

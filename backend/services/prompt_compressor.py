@@ -145,6 +145,7 @@ def compress_context_with_longllmlingua(
     instruction: str = "",
     rate: Optional[float] = None,
     target_token: Optional[int] = None,
+    enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Compresses and optimizes retrieved context chunks using the LongLLMLingua algorithm.
@@ -163,7 +164,8 @@ def compress_context_with_longllmlingua(
     orig_tokens_est = estimate_token_count(uncompressed_context)
 
     # 1. Check if LongLLMLingua is enabled
-    if not settings.longllmlingua.enabled:
+    is_enabled = enabled if enabled is not None else settings.longllmlingua.enabled
+    if not is_enabled:
         return {
             "compressed_context": uncompressed_context,
             "compressed_prompt": f"Context:\n{uncompressed_context}\n\nQuestion: {query}",

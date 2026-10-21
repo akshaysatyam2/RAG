@@ -335,10 +335,12 @@ def chat_endpoint():
         )
 
         # Compress and optimize context with LongLLMLingua
+        is_comp_enabled = req.enable_compression if req.enable_compression is not None else settings.longllmlingua.enabled
         compression_result = compress_context_with_longllmlingua(
             context_chunks=context_texts,
             query=req.query,
-            instruction="Synthesize a concise executive summary answering the question directly based only on the context."
+            instruction="Synthesize a concise executive summary answering the question directly based only on the context.",
+            enabled=is_comp_enabled
         )
         context_str = compression_result.get("compressed_context") or "\n\n".join(context_texts)
         

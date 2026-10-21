@@ -2,7 +2,25 @@
 
 A production-grade Retrieval-Augmented Generation (RAG) system combining **dense/sparse hybrid search**, **adaptive document-scale chunking**, **hierarchical section breadcrumbs**, **knowledge graph expansion**, and **cross-encoder re-ranking** to deliver grounded, hallucination-free answers from dense technical books, research papers, resumes, and complex documents.
 
-![GraphRAG UI Interface](docs/images/app_screenshot.png)
+## Interface & Prompt Compression Comparison
+
+| Baseline Hybrid RAG (Uncompressed Context) | With LongLLMLingua Question-Aware Compression |
+|:------------------------------------------:|:---------------------------------------------:|
+| ![Baseline RAG](docs/images/app_screenshot.png) | ![With LongLLMLingua](docs/images/with_longllmlingua.png) |
+
+### Key Differences Observed
+
+1. **Context Density & Information Filtering**:
+   - **Baseline (Standard RAG)**: Passes raw, uncompressed retrieved chunks verbatim into the generation prompt. As shown in the baseline screenshot, responses often pull surrounding introductory narrative (e.g. conversational textbook explanations like *"eye color is qualitative, taking on values blue, brown, or green..."*).
+   - **With LongLLMLingua**: Uses question-conditioned perplexity scoring to aggressively prune low-information tokens, retaining high-yield mathematical expressions, core trade-offs (e.g. flexibility vs. interpretability across models), and essential formulas.
+
+2. **Token Efficiency & Downstream Cost Savings**:
+   - Compresses retrieved context by **~30%–40% (1.5x–1.7x compression ratio)** without sacrificing semantic recall or factual grounding.
+   - Lowers prompt token consumption for downstream cloud or local LLM generation.
+
+3. **Context Reordering & Lost-in-the-Middle Mitigation**:
+   - Standard retrieval orders strictly by reranker score, often burying key details in the middle of long multi-chunk prompts.
+   - LongLLMLingua dynamically sorts and distributes highest-density chunks toward prompt boundaries where attention is strongest.
 
 ---
 

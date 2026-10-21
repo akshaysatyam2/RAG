@@ -23,6 +23,8 @@ env/
 # Uploads and data
 uploads/
 data/
+docs/*.pdf
+*.pdf
 
 # IDE
 .vscode/
