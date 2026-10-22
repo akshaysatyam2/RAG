@@ -1,8 +1,8 @@
 # Multimodal GraphRAG — Architecture Ledger
 
-| Baseline Hybrid RAG | With LongLLMLingua Compression |
-|:--------------------:|:------------------------------:|
-| ![Baseline RAG](images/app_screenshot.png) | ![With LongLLMLingua](images/with_longllmlingua.png) |
+| Baseline Hybrid RAG | With LongLLMLingua (Typo & Definition) | With LongLLMLingua (Concept Precision) |
+|:--------------------:|:--------------------------------------:|:---------------------------------------:|
+| ![Baseline RAG](images/app_screenshot.png) | ![With LongLLMLingua](images/with_longllmlingua.png) | ![With LongLLMLingua 2](images/with_longllmlingua_2.png) |
 
 ## System Overview
 

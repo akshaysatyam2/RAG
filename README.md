@@ -4,9 +4,9 @@ A production-grade Retrieval-Augmented Generation (RAG) system combining **dense
 
 ## Interface & Prompt Compression Comparison
 
-| Baseline Hybrid RAG (Uncompressed Context) | With LongLLMLingua Question-Aware Compression |
-|:------------------------------------------:|:---------------------------------------------:|
-| ![Baseline RAG](docs/images/app_screenshot.png) | ![With LongLLMLingua](docs/images/with_longllmlingua.png) |
+| Baseline Hybrid RAG (Uncompressed Context) | LongLLMLingua (Typo & Definition Ranking) | LongLLMLingua (P-Value Statistical Concept) |
+|:------------------------------------------:|:-----------------------------------------:|:-------------------------------------------:|
+| ![Baseline RAG](docs/images/app_screenshot.png) | ![With LongLLMLingua](docs/images/with_longllmlingua.png) | ![With LongLLMLingua 2](docs/images/with_longllmlingua_2.png) |
 
 ### Key Differences Observed
 
