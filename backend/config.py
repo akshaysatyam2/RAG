@@ -91,16 +91,27 @@ class IngestionConfig:
 @dataclass
 class LongLLMLinguaConfig:
     enabled: bool = field(default_factory=lambda: _env_bool("ENABLE_LONGLLMLINGUA", True))
-    model_name: str = field(default_factory=lambda: _env("LONGLLMLINGUA_MODEL_NAME", "gpt2"))
+    model_name: str = field(
+        default_factory=lambda: _env(
+            "LONGLLMLINGUA_MODEL_NAME",
+            "gpt2"
+        )
+    )
+    use_llmlingua2: bool = field(default_factory=lambda: _env_bool("USE_LLMLINGUA2", False))
     device_map: str = field(default_factory=lambda: _env("LONGLLMLINGUA_DEVICE", "cpu"))
-    rate: float = field(default_factory=lambda: _env_float("LONGLLMLINGUA_RATE", 0.55))
+    rate: float = field(default_factory=lambda: _env_float("LONGLLMLINGUA_RATE", 0.65))
     target_token: int = field(default_factory=lambda: _env_int("LONGLLMLINGUA_TARGET_TOKEN", -1))
+    cpu_token_threshold: int = field(default_factory=lambda: _env_int("LONGLLMLINGUA_CPU_THRESHOLD", 150))
     rank_method: str = field(default_factory=lambda: _env("LONGLLMLINGUA_RANK_METHOD", "longllmlingua"))
     dynamic_context_compression_ratio: float = field(
-        default_factory=lambda: _env_float("LONGLLMLINGUA_DYNAMIC_RATIO", 0.3)
+        default_factory=lambda: _env_float("LONGLLMLINGUA_DYNAMIC_RATIO", 0.25)
     )
     reorder_context: str = field(default_factory=lambda: _env("LONGLLMLINGUA_REORDER_CONTEXT", "sort"))
-    condition_in_question: str = field(default_factory=lambda: _env("LONGLLMLINGUA_CONDITION_IN_QUESTION", "after"))
+    condition_in_question: str = field(default_factory=lambda: _env("LONGLLMLINGUA_CONDITION_IN_QUESTION", "after_condition"))
+    condition_compare: bool = field(default_factory=lambda: _env_bool("LONGLLMLINGUA_CONDITION_COMPARE", True))
+    use_context_level_filter: bool = field(default_factory=lambda: _env_bool("LONGLLMLINGUA_CONTEXT_FILTER", True))
+    use_sentence_level_filter: bool = field(default_factory=lambda: _env_bool("LONGLLMLINGUA_SENTENCE_FILTER", True))
+    use_token_level_filter: bool = field(default_factory=lambda: _env_bool("LONGLLMLINGUA_TOKEN_FILTER", False))
 
 
 @dataclass

@@ -3,11 +3,15 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def mock_cross_encoder():
+    import backend.services.reranker as reranker_module
+    old_model = reranker_module._cross_encoder
+    reranker_module._cross_encoder = None
     with patch("backend.services.reranker.CrossEncoder") as mock_ce:
         instance = mock_ce.return_value
         # return dummy scores based on input length or just static
         instance.predict.side_effect = lambda pairs: [0.9 if "high" in p[1] else 0.1 for p in pairs]
         yield mock_ce
+    reranker_module._cross_encoder = old_model
 
 from backend.services.reranker import rerank, filter_by_threshold
 

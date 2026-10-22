@@ -46,8 +46,11 @@ def test_longllmlingua_config():
     settings = Settings()
     assert settings.longllmlingua.enabled is True
     assert settings.longllmlingua.model_name == "gpt2"
+    assert settings.longllmlingua.use_llmlingua2 is False
+    assert settings.longllmlingua.use_sentence_level_filter is True
+    assert settings.longllmlingua.use_token_level_filter is False
     assert settings.longllmlingua.device_map == "cpu"
-    assert settings.longllmlingua.rate == 0.55
+    assert settings.longllmlingua.rate == 0.65
     assert settings.longllmlingua.reorder_context == "sort"
 
     with patch.dict(os.environ, {

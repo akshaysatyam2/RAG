@@ -60,6 +60,8 @@ def test_heuristic_compression():
 def test_compress_with_mock_compressor(monkeypatch):
     monkeypatch.setattr("backend.config.settings.longllmlingua.enabled", True)
     monkeypatch.setattr("backend.config.settings.longllmlingua.rate", 0.6)
+    monkeypatch.setattr("backend.config.settings.longllmlingua.model_name", "gpt2")
+    monkeypatch.setattr("backend.config.settings.longllmlingua.use_llmlingua2", False)
 
     mock_compressor = MagicMock()
     mock_compressor.compress_prompt.return_value = {
@@ -89,6 +91,38 @@ def test_compress_with_mock_compressor(monkeypatch):
         assert kwargs["condition_compare"] is True
 
 
+def test_compress_with_llmlingua2_mock(monkeypatch):
+    monkeypatch.setattr("backend.config.settings.longllmlingua.enabled", True)
+    monkeypatch.setattr("backend.config.settings.longllmlingua.model_name", "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank")
+    monkeypatch.setattr("backend.config.settings.longllmlingua.use_llmlingua2", True)
+    monkeypatch.setattr("backend.config.settings.longllmlingua.rate", 0.65)
+
+    mock_compressor = MagicMock()
+    mock_compressor.compress_prompt.return_value = {
+        "compressed_prompt": "Paris capital of France",
+        "compressed_prompt_list": ["[1] Paris capital of France"],
+        "origin_tokens": 20,
+        "compressed_tokens": 10,
+        "ratio": "2.0x",
+        "rate": 0.5,
+        "saving": "50.0%",
+    }
+
+    with patch("backend.services.prompt_compressor.get_compressor", return_value=mock_compressor):
+        chunks = ["[1] Full chunk about Paris."]
+        res = compress_context_with_longllmlingua(chunks, "What is the capital?")
+
+        assert res["applied"] is True
+        assert res["fallback"] is False
+        assert res["ratio"] == "2.0x"
+        assert "[1] Paris capital of France" in res["compressed_context"]
+        mock_compressor.compress_prompt.assert_called_once_with(
+            context=chunks,
+            rate=0.65,
+            force_reserve_digit=True
+        )
+
+
 def test_compress_fallback_on_error(monkeypatch):
     monkeypatch.setattr("backend.config.settings.longllmlingua.enabled", True)
 
@@ -114,6 +148,7 @@ def test_real_longllmlingua_compression_with_gpt2(monkeypatch):
 
     monkeypatch.setattr("backend.config.settings.longllmlingua.enabled", True)
     monkeypatch.setattr("backend.config.settings.longllmlingua.model_name", "gpt2")
+    monkeypatch.setattr("backend.config.settings.longllmlingua.use_llmlingua2", False)
     monkeypatch.setattr("backend.config.settings.longllmlingua.device_map", "cpu")
     monkeypatch.setattr("backend.config.settings.longllmlingua.rate", 0.6)
 

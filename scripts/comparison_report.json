@@ -1,62 +1,62 @@
 [
   {
     "query": "What is logistic regression and when is it preferred over SVM?",
-    "raw_tokens": 0,
-    "compressed_tokens": 0,
-    "ratio": "1.0x",
-    "savings": "0.0%",
-    "compression_time_ms": 0.0,
+    "raw_tokens": 769,
+    "compressed_tokens": 530,
+    "ratio": "1.5x",
+    "savings": "31.1%",
+    "compression_time_ms": 2734.11,
     "baseline": {
-      "tokens": 0,
-      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What is logistic regression and when is it preferred over SVM?",
-      "latency_ms": 2558.19,
-      "context_sample": "..."
+      "tokens": 769,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 When the classes are well separated, SVMs tend to behave better than logistic regression; in more overlapping regimes, logistic regression is often preferred.\n\u2022 However, for historical reasons, the use of non-linear kernels is much more widespread in the context of SVMs than in the context of logistic regression or other methods.\n\u2022 The SVM and logistic regression loss functions are compared, as a function of yi(\u03b20 + \u03b21xi1 + .",
+      "latency_ms": 7.26,
+      "context_sample": "[1] + \u03b2pxip) FIGURE 9.12.\n\nThe SVM and logistic regression loss functions are compared, as a function of yi(\u03b20 + \u03b21xi1 + .\n\n.+ \u03b2pxip).\n\nWhen yi(\u03b20 + \u03b21xi1 + .\n\n+ \u03b2pxip) is greater than 1, then the SVM loss is zero, since this corresponds to an observation that is on the correct side of the margin.\n\n..."
     },
     "longllmlingua": {
-      "tokens": 0,
-      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What is logistic regression and when is it preferred over SVM?",
-      "latency_ms": 0.39,
-      "context_sample": "..."
+      "tokens": 530,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 When the classes are well separated, SVMs tend to behave better than logistic regression; in more overlapping regimes, logistic regression is often preferred.\n\u2022 However, for historical reasons, the use of non-linear kernels is much more widespread in the context of SVMs than in the context of logistic regression or other methods.\n\u2022 However, it hinge loss turns out that the hinge loss function is closely related to the loss function used in logistic regression, also shown in Figure 9.12.\n\u2022 Due to the similarities between their loss functions, logistic regression and the support vector classi\ufb01er often give very similar results.\n\u2022 The SVM and logistic regression loss functions are compared, as a function of yi(\u03b20 + \u03b21xi1 + .",
+      "latency_ms": 4.91,
+      "context_sample": "[1] The SVM and logistic regression loss functions are compared, as a function of yi(\u03b20 + \u03b21xi1 + . .+ \u03b2pxip). When yi(\u03b20 + \u03b21xi1 + . Overall, the two loss functions have quite similar behavior. When the support vector classi\ufb01er and SVM were \ufb01rst introduced, it was thought that the tuning parameter ..."
     }
   },
   {
     "query": "What university or college did Akshay graduate from?",
-    "raw_tokens": 0,
-    "compressed_tokens": 0,
-    "ratio": "1.0x",
-    "savings": "0.0%",
-    "compression_time_ms": 0.0,
+    "raw_tokens": 483,
+    "compressed_tokens": 341,
+    "ratio": "1.4x",
+    "savings": "29.4%",
+    "compression_time_ms": 3.33,
     "baseline": {
-      "tokens": 0,
-      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What university or college did Akshay graduate from?",
-      "latency_ms": 0.36,
-      "context_sample": "..."
+      "tokens": 483,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 EDUCATION  Bachelor in Computer Application and Cyber Security (BCACS), CGPA: 8.41,\u200b 2020 - 2023  Jharkhand Raksha Shakti University\u200b Ranchi, JH\n\u2022 Akshay Kumar  +91 7488269891 | akshaysatyam2003@gmail.com| LinkedIn | Portfolio   Machine Learning Engineer specializing in real-time computer vision, generative AI architectures, NLP, Agentic AI and  high-performance edge inference.",
+      "latency_ms": 1432.29,
+      "context_sample": "[1] DDPM Diffusion Model | GitHub & Samples | PyTorch, Raw Mathematics, MNIST   \u25cf\u200b Built a Denoising Diffusion Probabilistic Model (DDPM) from scratch to generate 32x32 images, focusing on  deep architectural control and modularity.\n\nTraffic Violation Detection System| GitHub | Python, YOLO, EasyOCR..."
     },
     "longllmlingua": {
-      "tokens": 0,
-      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: What university or college did Akshay graduate from?",
-      "latency_ms": 0.26,
-      "context_sample": "..."
+      "tokens": 341,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 EDUCATION  Bachelor in Computer Application and Cyber Security (BCACS), CGPA: 8.41,\u200b 2020 - 2023  Jharkhand Raksha Shakti University\u200b Ranchi, JH\n\u2022 Akshay Kumar  +91 7488269891 | akshaysatyam2003@gmail.com| LinkedIn | Portfolio   Machine Learning Engineer specializing in real-time computer vision, generative AI architectures, NLP, Agentic AI and  high-performance edge inference.",
+      "latency_ms": 2.91,
+      "context_sample": "[1] DDPM Diffusion Model | GitHub & Samples | PyTorch, Raw Mathematics, MNIST   \u25cf\u200b Built a Denoising Diffusion Probabilistic Model (DDPM) from scratch to generate 32x32 images, focusing on  deep architectural control and modularity. EDUCATION  Bachelor in Computer Application and Cyber Security (BCA..."
     }
   },
   {
     "query": "Explain the bootstrap resampling method.",
-    "raw_tokens": 0,
-    "compressed_tokens": 0,
-    "ratio": "1.0x",
-    "savings": "0.0%",
-    "compression_time_ms": 0.0,
+    "raw_tokens": 1893,
+    "compressed_tokens": 1322,
+    "ratio": "1.4x",
+    "savings": "30.2%",
+    "compression_time_ms": 10.37,
     "baseline": {
-      "tokens": 0,
-      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: Explain the bootstrap resampling method.",
-      "latency_ms": 0.37,
-      "context_sample": "..."
+      "tokens": 1893,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Again, the boxplots are quite similar to each other, indicating that the bootstrap approach can be used to e\ufb00ectively estimate the variability associated with \u02c6\u03b1.\n\u2022 Each bootstrap data set contains n observations, sampled with replacement from the original data set.\n\u2022 In this chapter, we discuss two of the most commonly used resampling methods, cross-validation and the bootstrap.\n\u2022 We repeatedly create bootstrap samples, and each time we record whether or not the fourth observation is contained in the bootstrap sample.\n\u2022 Resampling Methods Obs 3 5.3 2.8 3 5.3 2.8 1 4.3 2.4 X Y Obs Original Data (Z) Z*1 Z*2 Z*B 1 4.3 2.4 3 5.3 2.8 2 2.1 1.1 X Y Obs 2 2.1 1.1 1 4.3 2.4 3 5.3 2.8 X Y Obs 2 2.1 1.1 1 4.3 2.4 2 2.1 1.1 X Y \u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7 \u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7 \u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7 \u00b7\u00b7\u00b7\u00b7\u00b7 a *1 a *2 a *B \u02c6 \u02c6 \u02c6 FIGURE 5.11.",
+      "latency_ms": 9.13,
+      "context_sample": "[1] 198 5. Resampling Methods (f) When n = 10, 000, what is the probability that the jth observation is in the bootstrap sample? (g) Create a plot that displays, for each integer value of n from 1 to 100, 000, the probability that the jth observation is in the bootstrap sample. Comment on what you o..."
     },
     "longllmlingua": {
-      "tokens": 0,
-      "answer": "**Summary of Relevant Information:**\n\n\u2022 Question: Explain the bootstrap resampling method.",
-      "latency_ms": 0.26,
-      "context_sample": "..."
+      "tokens": 1322,
+      "answer": "**Summary of Relevant Information:**\n\n\u2022 Again, the boxplots are quite similar to each other, indicating that the bootstrap approach can be used to e\ufb00ectively estimate the variability associated with \u02c6\u03b1.\n\u2022 For example, in order to estimate the variability of a linear regression \ufb01t, we can repeatedly draw di\ufb00erent samples from the training data, \ufb01t a linear regression to each new sample, and then examine the extent to which the resulting \ufb01ts di\ufb00er.\n\u2022 Each bootstrap data set contains n observations, sampled with replacement from the original data set.\n\u2022 In Section 5.3 we explore the use of the bootstrap to assess the variability associated with the regression coe\ufb03cients in a linear model \ufb01t.\n\u2022 Since there is variability associated with the returns on these two assets, we wish to choose \u03b1 to minimize the total risk, or variance, of our investment.",
+      "latency_ms": 8.96,
+      "context_sample": "[3] Resampling Methods Obs 3 5.3 2.8 3 5.3 2.8 1 4.3 2.4 X Y Obs Original Data (Z) Z*1 Z*2 Z*B 1 4.3 2.4 3 5.3 2.8 2 2.1 1.1 X Y Obs 2 2.1 1.1 1 4.3 2.4 3 5.3 2.8 X Y Obs 2 2.1 1.1 1 4.3 2.4 2 2.1 1.1 X Y \u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7 \u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7 \u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7\u00b7 \u00b7\u00b7\u00b7\u00b7\u00b7 a *1 a *2 a *B \u02c6 \u02c6 \u02c6 FIGURE 5.11. A graphical illustrat..."
     }
   }
 ]

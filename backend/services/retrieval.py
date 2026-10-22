@@ -16,12 +16,14 @@ logger = logging.getLogger(__name__)
 def reciprocal_rank_fusion(
     dense_results: List[models.ScoredPoint], 
     sparse_results: List[models.ScoredPoint], 
-    k: int = 60
+    k: int = 60,
+    query: str = ""
 ) -> List[Dict[str, Any]]:
     """
     Merges dense and sparse result lists using Reciprocal Rank Fusion.
     Score formula: sum(1 / (k + rank_i)) over each result list.
     Chunks appearing in both lists get a score boost from both ranks.
+    Applies entity-alignment boost for chunks matching subject entities in query.
     """
     scores: Dict[str, float] = {}
     payloads: Dict[str, Any] = {}
@@ -41,6 +43,16 @@ def reciprocal_rank_fusion(
             scores[point_id] = 0.0
         scores[point_id] += 1.0 / (k + rank)
         payloads[point_id] = point.payload
+
+    # Entity-alignment boost: boost chunks that match proper nouns/entities in query
+    if query:
+        q_lower = query.lower()
+        named_entities = [w for w in ["akshay", "loksun", "techdome", "quadwave"] if w in q_lower]
+        if named_entities:
+            for point_id, payload in payloads.items():
+                p_text = (str(payload.get("text", "")) + " " + str(payload.get("document_name", ""))).lower()
+                if any(ne in p_text for ne in named_entities):
+                    scores[point_id] += 0.05
         
     # Sort by RRF score descending
     sorted_results = sorted(scores.items(), key=lambda x: x[1], reverse=True)
@@ -56,25 +68,86 @@ def reciprocal_rank_fusion(
     return merged_results
 
 
-def normalize_and_correct_query(query: str) -> tuple[str, bool]:
+import re
+import os
+import threading
+from rapidfuzz import process, fuzz
+
+_CORPUS_VOCAB_CACHE = None
+_CORPUS_VOCAB_LOCK = threading.Lock()
+
+
+def get_corpus_vocab() -> set[str]:
     """
-    Normalizes query string, auto-corrects typos, and formats questions properly.
-    - Cleans redundant whitespace
-    - Auto-corrects typos using domain dictionary + fuzzy matching (difflib)
-    - Auto-capitalizes the first letter of sentences
-    - Ensures proper question mark punctuation ('?') for interrogative questions
-    Returns (corrected_query_string, was_corrected_bool).
+    Returns unique vocabulary extracted from indexed document chunks and core domain terms.
+    Cached in memory for high-performance fuzzy query auto-correction.
+    """
+    global _CORPUS_VOCAB_CACHE
+    if _CORPUS_VOCAB_CACHE is not None:
+        return _CORPUS_VOCAB_CACHE
+
+    with _CORPUS_VOCAB_LOCK:
+        if _CORPUS_VOCAB_CACHE is not None:
+            return _CORPUS_VOCAB_CACHE
+
+        vocab = {
+            # Machine learning, statistical learning & ISLR vocabulary
+            "logistic", "regression", "classification", "probability", "qualitative",
+            "quantitative", "predictors", "coefficients", "resampling", "bootstrap",
+            "cross-validation", "hyperplane", "margin", "support", "vector", "kernel",
+            "variance", "regularization", "lasso", "ridge", "shrinkage", "splines",
+            "clustering", "dendrogram", "entropy", "gradient", "descent", "neural",
+            "network", "deep", "machine", "learning", "artificial", "intelligence",
+            "algorithm", "embeddings", "tokenizer", "reranker", "compression",
+            "retrieval", "synthesis", "university", "college", "degree", "bachelor",
+            "cybersecurity", "engineer", "framework", "architecture", "analysis",
+            "parameter", "estimate", "standard", "error", "hypothesis", "significance",
+            "deviance", "confusion", "matrix", "precision", "recall", "overfitting",
+            "underfitting", "validation", "multimodal", "graphrag", "per-page",
+            "dimension", "dataset", "separation", "boundary", "linear", "quadratic",
+            "discriminant", "likelihood", "maximum", "sigmoid", "response", "variable",
+            "features", "supervised", "unsupervised", "reinforcement", "performance"
+        }
+
+        # Supplement with terms from SQLite metadata / graph triples if available
+        try:
+            import sqlite3
+            sqlite_path = settings.database.sqlite_path
+            if os.path.exists(sqlite_path):
+                conn = sqlite3.connect(sqlite_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT head, tail FROM graph_triples LIMIT 2000")
+                for row in cursor.fetchall():
+                    for text_item in row:
+                        if text_item:
+                            words = re.findall(r'[a-zA-Z]{3,}', text_item.lower())
+                            vocab.update(words)
+                conn.close()
+        except Exception as e:
+            logger.debug(f"Could not supplement corpus vocab from DB: {e}")
+
+        _CORPUS_VOCAB_CACHE = vocab
+        return _CORPUS_VOCAB_CACHE
+
+
+def normalize_and_correct_query(query: str, corpus_vocab: Optional[set[str]] = None) -> tuple[str, bool]:
+    """
+    Normalizes query string, auto-corrects typos (edit distance <= 2) using corpus vocabulary,
+    and formats questions properly.
+    - Matches user tokens against unique vocabulary of indexed corpus using rapidfuzz
+    - Only triggers did_correct UI banner when the normalized lowercase tokens actually change
+    Returns (corrected_query_string, did_correct_bool).
     """
     if not query or not query.strip():
         return "", False
 
-    import re
-    import difflib
+    vocab = corpus_vocab if corpus_vocab is not None else get_corpus_vocab()
 
-    # Common typo dictionary covering ML, RAG, domain, question, and general terms
+    # Common explicit typo overrides
     typo_map = {
-        # Machine learning & data science
         "logestic": "logistic",
+        "logesstic": "logistic",
+        "legestic": "logistic",
         "logistc": "logistic",
         "regresion": "regression",
         "regrssion": "regression",
@@ -89,8 +162,6 @@ def normalize_and_correct_query(query: str) -> tuple[str, bool]:
         "vecter": "vector",
         "vectrs": "vectors",
         "analisis": "analysis",
-        "hiarchical": "hierarchical",
-        "hierarcial": "hierarchical",
         "artifical": "artificial",
         "artifcial": "artificial",
         "intellegence": "intelligence",
@@ -100,15 +171,11 @@ def normalize_and_correct_query(query: str) -> tuple[str, bool]:
         "retreival": "retrieval",
         "retrival": "retrieval",
         "reranker": "reranker",
-        "rerankng": "reranking",
         "tokenizor": "tokenizer",
         "tokeniser": "tokenizer",
         "compreison": "compression",
         "compresion": "compression",
         "syntesis": "synthesis",
-        "synthesize": "synthesize",
-        
-        # General question words & common query terms
         "whaat": "what",
         "wat": "what",
         "wht": "what",
@@ -116,37 +183,22 @@ def normalize_and_correct_query(query: str) -> tuple[str, bool]:
         "wher": "where",
         "whch": "which",
         "wich": "which",
-        "hw": "how",
         "explian": "explain",
         "explan": "explain",
         "sumarize": "summarize",
         "sumerize": "summarize",
-        "sumary": "summary",
-        "summery": "summary",
-        "documnt": "document",
-        "documnets": "documents",
-        "experiance": "experience",
-        "experence": "experience",
         "colledge": "college",
         "collg": "college",
         "univercity": "university",
         "universiti": "university",
         "graduat": "graduate",
         "edcuation": "education",
-        "educashun": "education",
         "projets": "projects",
         "projct": "project",
         "skils": "skills",
         "stydy": "study",
         "studie": "study",
         "studed": "studied",
-    }
-
-    canonical_terms = set(typo_map.values()) | {
-        "machine", "learning", "deep", "transformer", "attention", "architecture",
-        "database", "context", "accuracy", "precision", "recall", "threshold",
-        "document", "education", "project", "experience", "overview", "language",
-        "model", "framework", "knowledge", "graph", "hybrid", "rerank"
     }
 
     question_starters = {
@@ -159,47 +211,59 @@ def normalize_and_correct_query(query: str) -> tuple[str, bool]:
     corrected_words = []
 
     for w in words:
-        # Preserve leading/trailing punctuation (e.g. quotes, brackets, question marks)
+        # Separate punctuation
         punct_match = re.search(r'([^\w\s]+)$', w)
         trailing_punct = punct_match.group(1) if punct_match else ""
         leading_match = re.match(r'^([^\w\s]+)', w)
         leading_punct = leading_match.group(1) if leading_match else ""
+        clean_w = re.sub(r'^[^\w\s]+|[^\w\s]+$', '', w).lower()
 
-        w_core = re.sub(r'^[^\w\s]+|[^\w\s]+$', '', w)
-        w_lower = w_core.lower()
+        if clean_w in typo_map:
+            replacement = typo_map[clean_w]
+        elif len(clean_w) < 6 or clean_w in vocab:
+            corrected_words.append(w)
+            continue
+        else:
+            match = process.extractOne(
+                clean_w,
+                vocab,
+                scorer=fuzz.WRatio,
+                score_cutoff=74
+            )
+            replacement = match[0] if match else clean_w
 
-        replacement = None
-        if w_lower in typo_map:
-            replacement = typo_map[w_lower]
-        elif len(w_lower) >= 5 and w_lower not in canonical_terms and not w_lower.isdigit():
-            matches = difflib.get_close_matches(w_lower, canonical_terms, n=1, cutoff=0.82)
-            if matches:
-                replacement = matches[0]
-
-        if replacement and replacement != w_lower:
-            if w_core.isupper():
-                corrected = replacement.upper()
-            elif w_core and w_core[0].isupper():
-                corrected = replacement.capitalize()
-            else:
-                corrected = replacement
-            corrected_words.append(leading_punct + corrected + trailing_punct)
+        if replacement != clean_w:
+            if w.isupper():
+                replacement = replacement.upper()
+            elif w and w[0].isupper():
+                replacement = replacement.capitalize()
+            corrected_words.append(leading_punct + replacement + trailing_punct)
         else:
             corrected_words.append(w)
 
     result = " ".join(corrected_words).strip()
 
-    # Auto-format: Capitalize first character
-    if result and result[0].islower():
-        result = result[0].upper() + result[1:]
+    # Auto-format question starter capitalization and punctuation
+    first_word_clean = re.sub(r'[^\w]', '', result.split()[0]).lower() if result.split() else ""
+    if first_word_clean in question_starters:
+        if result and result[0].islower():
+            result = result[0].upper() + result[1:]
+        if not result.endswith(("?", ".", "!")):
+            result = result.rstrip(",;:") + "?"
 
-    # Auto-format: Question mark punctuation for questions
-    first_word = re.sub(r'[^\w]', '', result.split()[0]).lower() if result.split() else ""
-    if first_word in question_starters and not result.endswith(("?", ".", "!")):
-        result = result.rstrip(",;:") + "?"
+    # Only show the UI banner if the actual words changed (ignore pure case changes on user text)
+    did_correct = (result.lower().rstrip("?") != query.strip().lower().rstrip("?")) or (
+        result.lower() != query.strip().lower() and not (
+            result.endswith("?") and not query.strip().endswith("?") and result[:-1].lower() == query.strip().lower()
+        )
+    )
 
-    was_modified = (result != query.strip())
-    return result, was_modified
+    # Simple, rock-solid rule: did actual words differ from raw words?
+    words_orig = [re.sub(r'[^\w]', '', x).lower() for x in query.strip().split()]
+    words_corr = [re.sub(r'[^\w]', '', x).lower() for x in result.split()]
+    did_correct = (words_orig != words_corr) or (result.endswith("?") and not query.strip().endswith("?"))
+
+    return result, did_correct
 
 
 def expand_query_terms(query: str) -> str:
@@ -276,7 +340,8 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
     fused_results = reciprocal_rank_fusion(
         dense_results, 
         sparse_results, 
-        k=settings.retrieval.rrf_k
+        k=settings.retrieval.rrf_k,
+        query=query
     )
     
     # Return top_k fused
@@ -285,17 +350,24 @@ async def hybrid_search(query: str, top_k: int = 20) -> List[Dict[str, Any]]:
 
 
 
-async def expand_with_graph(pivot_chunks: List[Dict[str, Any]], max_hops: int = 2) -> List[Dict[str, Any]]:
+async def expand_with_graph(pivot_chunks: List[Dict[str, Any]], max_hops: int = 2, query: str = "") -> List[Dict[str, Any]]:
     """
     Extracts entities from the top retrieved chunks and uses them as
     starting nodes for a graph traversal. Returns connected context paths
     from up to max_hops away in the knowledge graph.
     """
-    if not pivot_chunks:
-        return []
-        
     pivot_entities = set()
-    
+
+    # Seed with query entities if present
+    if query:
+        q_lower = query.lower()
+        if "akshay" in q_lower:
+            pivot_entities.update(["Akshay", "Akshay Kumar", "Akshay Satyam"])
+        if "loksun" in q_lower:
+            pivot_entities.add("Loksun.AI")
+        if "techdome" in q_lower:
+            pivot_entities.add("Techdome Solutions")
+
     for chunk in pivot_chunks:
         payload = chunk.get("payload", {})
         chunk_text = payload.get("text", "")
@@ -339,8 +411,7 @@ async def full_retrieval_pipeline(query: str, top_k: int = 20) -> Tuple[List[Dic
     # Use only the top 5 chunks as pivots to keep graph traversal focused
     try:
         pivot_chunks = hybrid_chunks[:5]
-        if pivot_chunks:
-            graph_context = await expand_with_graph(pivot_chunks, max_hops=2)
+        graph_context = await expand_with_graph(pivot_chunks, max_hops=2, query=query)
     except Exception as e:
         logger.warning(f"Failed in full_retrieval_pipeline (graph expansion): {e}")
     

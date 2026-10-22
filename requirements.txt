@@ -27,7 +27,8 @@ PyMuPDF
 pytesseract
 Pillow
 
-# BM25 sparse retrieval
+# Dense Embeddings & Reranking
+sentence-transformers
 rank-bm25
 
 # Environment management
@@ -39,6 +40,7 @@ aiosqlite
 # Utilities
 numpy
 httpx
+rapidfuzz
 
 # Testing
 pytest

@@ -50,12 +50,39 @@ def detect_page_role(page_num: int, total_pages: int, text: str) -> str:
     return "BODY"
 
 
+import re
+
+# Patterns that match textbook exercises, raw captions, and meta-boilerplate
+NOISE_PATTERNS = [
+    r"^(Consider|Suppose|Prove|Argue|Using \(\d+\.\d+\), argue)\b",  # Homework problems
+    r"^(FIGURE|TABLE|Figure|Table)\s+\d+\.\d+",                      # Raw captions
+    r"^For the Default data, estimated coefficients of",             # Caption fragments
+    r"beyond the scope of this book",                                # Textbook filler
+    r"we do not need to concern ourselves with",                     # Textbook filler
+]
+NOISE_REGEX = re.compile("|".join(NOISE_PATTERNS), re.IGNORECASE)
+
+
+def is_noisy_sentence(sentence: str) -> bool:
+    """
+    Identifies and discards textbook homework problems, raw chart/table captions,
+    and meta-boilerplate sentences that corrupt factual RAG synthesis.
+    Normalizes common typographic ligatures (fi, fl, ffi, ff) for robust matching.
+    """
+    s = sentence.strip()
+    if len(s.split()) < 6:
+        return True
+    s_norm = s.replace("ﬁ", "fi").replace("ﬂ", "fl").replace("ﬃ", "ffi").replace("ﬀ", "ff").replace("ﬄ", "ffl")
+    return bool(NOISE_REGEX.search(s_norm))
+
+
 def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
     """
-    Extracts text from each page of a PDF using PyMuPDF.
-    Runs Tesseract OCR on scanned/image-only pages.
-    Tags each page role ('BODY', 'TOC', 'INDEX', 'EMPTY') so TOC/Index pages
-    can be filtered out from semantic vector indexing.
+    Extracts sanitized text from each page of a PDF using PyMuPDF.
+    - Discards narrow blocks located in the outer left/right 12% margins to prevent margin notes from merging into sentences
+    - De-hyphenates line wraps across line breaks
+    - Runs Tesseract OCR on scanned/image-only pages
+    - Tags each page role ('BODY', 'TOC', 'INDEX', 'EMPTY') so TOC/Index pages can be filtered
     Returns list of {page_number, text, role} dicts.
     """
     pages = []
@@ -63,15 +90,42 @@ def parse_pdf(file_path: str) -> List[Dict[str, Any]]:
         doc = fitz.open(file_path)
         total_pages = len(doc)
         for i, page in enumerate(doc):
-            text = page.get_text("text")
+            w_left = page.rect.width * 0.12
+            w_right = page.rect.width * 0.865
+
+            words = page.get_text("words")
+            if isinstance(words, (list, tuple)) and words and isinstance(words[0], (list, tuple)) and len(words[0]) >= 8:
+                lines_dict = {}
+                for w in words:
+                    x0, y0, x1, y1, word, bno, lno, wno = w
+                    # Discard outer margin words (e.g. blue margin notes in ISLR)
+                    if x0 >= w_right or x1 <= w_left:
+                        continue
+                    key = (bno, lno)
+                    if key not in lines_dict:
+                        lines_dict[key] = []
+                    lines_dict[key].append(word)
+
+                reconstructed = []
+                for key in sorted(lines_dict.keys()):
+                    reconstructed.append(" ".join(lines_dict[key]))
+                text = "\n".join(reconstructed)
+            else:
+                raw_text = page.get_text("text") if hasattr(page, "get_text") else ""
+                text = raw_text if isinstance(raw_text, str) else str(words or "")
+
+            # De-hyphenate line wraps across line breaks
+            if text:
+                text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', text)
+
             if not text or len(text.strip()) < 10:
                 # Page has no extractable text — try OCR
                 try:
                     pix = page.get_pixmap()
                     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                     ocr_text = pytesseract.image_to_string(img)
-                    if ocr_text and len(ocr_text.strip()) > len(text.strip()):
-                        text = ocr_text
+                    if ocr_text and len(ocr_text.strip()) > len(text.strip() if text else ""):
+                        text = re.sub(r'(\w+)-\s*\n\s*(\w+)', r'\1\2', ocr_text)
                 except Exception as ocr_err:
                     logger.warning(f"OCR fallback failed for page {i+1} of {file_path}: {ocr_err}")
 
